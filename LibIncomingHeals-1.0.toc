@@ -1,0 +1,9 @@
+## Interface: 30200
+## Title: Lib: Incoming Heals - 1.0
+## Notes: Incoming heals library
+## X-Category: Library
+
+libs\LibStub\LibStub.lua
+libs\CallbackHandler-1.0\Callbackhandler-1.0.lua
+
+LibIncomingHeals-1.0.xml
