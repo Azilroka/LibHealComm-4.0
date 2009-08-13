@@ -567,51 +567,62 @@ function PendHeals:PLAYER_EQUIPMENT_CHANGED()
 end
 
 -- Spell cast magic
--- All of the name lines are just debug code.
-local castStart, castUnit, castGUID, castID, checkUnitID, targetUnit
-local mouseoverGUID, mouseoverName, castName, fallbackGUID, fallbackName
+-- When auto self cast is on, the UNIT_SPELLCAST_SENT event will always come first followed by the funciton calls
+-- Otherwise either SENT comes first then function calls, or some function calls then SENT then more function calls
+local guidPriority, castGUID, castID, targetUnit, mouseoverGUID, castName, fallbackGUID, targetTimer
+
+-- Deals with the fact that functions are called differently, priorities are basically:
+-- 1 = might be it, 2 = should be it, 3 = definitely it
+local function setCastData(priority, guid)
+	if( guidPriority and guidPriority >= priority ) then return end
+		
+	castGUID = guid
+	guidPriority = priority
+end
+
+-- When the game tries to figure out the UnitID from the name it will prioritize players over non-players
+-- if there are conflicts in names it will pull the one with the least amount of current health
+
+-- This would be another way of getting GUIDs, by keeping a map and marking conflicts due to pets (or vehicles)
+-- we would know that you can't rely on the name exactly and that the other methods are needed. While they seem
+-- to be accurate and not have any issues, it could be a good solution as a better safe than sorry option.
 function PendHeals:UNIT_SPELLCAST_SENT(unit, spellName, rank, castOn)
 	if( unit ~= "player" or not self.averageHeal[spellName .. rank] ) then return end
-	targetUnit = nil
-	
-	-- When the game tries to figure out the UnitID from the name it will prioritize players over non-players
-	-- if there are conflicts in names it will pull the one with the least amount of current health
-	-- This would be another way of getting GUIDs, by keeping a map and marking conflicts due to pets (or vehicles)
-	-- we would know that you can't rely on the name exactly and that the other methods are needed. While they seem
-	-- to be accurate and not have any issues, it could be a good solution as a better safe than sorry option.
-	if( checkUnitID ) then
-		if( checkUnitID == spellName ) then
-			castGUID = UnitCanAssist("player", "target") and UnitGUID("target") or mouseoverGUID
-			castName = UnitCanAssist("player", "target") and UnitName("target") or mouseoverName
-			targetUnit = GetTime() + 0.015
-		end
+
+	-- Self cast is off which means it's possible to have a spell waiting for a target.
+	-- It's possible that it's the mouseover unit, but if we see a *TargetUnit call then we know it's that unit for sure
+	if( not GetCVarBool("autoSelfCast") ) then
+		targetTimer = true
+		self.resetFrame:Show()
 		
-		checkUnitID = nil
+		setCastData(1, mouseoverGUID)
 	end
 	
 	fallbackGUID = UnitGUID(castOn)
-	fallbackName = UnitName(castOn)
 end
 
 function PendHeals:UNIT_SPELLCAST_START(unit, spellName, spellRank, id)
 	if( unit ~= "player" or not self.averageHeal[spellName .. spellRank] ) then return end
 	castGUID = castGUID or fallbackGUID
-	castName = castName or fallbackName
-	
+		
 	local amount = CalculateHealing(castGUID, spellName, spellRank)
-	--print(castName, castGUID, spellName, spellrank, amount)
+	print(castGUID, spellName, spellRank, amount)
 	
 	castID = id
 	castGUID = nil
+	guidPriority = nil
 end
 
 function PendHeals:UNIT_SPELLCAST_SUCCEEDED(unit, spellName, rank, id)
 	if( unit ~= "player" or id ~= castID ) then return end
+	castGUID = nil
+	guidPriority = nil
 end
 
 function PendHeals:UNIT_SPELLCAST_STOP(unit, spellName, rank, id)
 	if( unit ~= "player" or id ~= castID ) then return end
 	castGUID = nil
+	guidPriority = nil
 end
 
 function PendHeals:UNIT_SPELLCAST_CHANNEL_STOP(unit, spellName, rank)
@@ -622,69 +633,53 @@ end
 -- Need to keep track of mouseover as it can change in the split second after/before casts
 function PendHeals:UPDATE_MOUSEOVER_UNIT()
 	mouseoverGUID = UnitCanAssist("player", "mouseover") and UnitGUID("mouseover")
-	mouseoverName = UnitCanAssist("player", "mouseover") and UnitName("mouseover")
 end
 
 
--- TargetUnit is used when a spell is waiting for a target and someone uses a key binding
+-- This is only needed when auto self cast is off, in which case this is called right after UNIT_SPELLCAST_SENT
+-- because the player got a waiting-for-cast icon up and they pressed a key binding to target someone
 function PendHeals:TargetUnit(unit)
-	if( targetUnit and GetTime() < targetUnit ) then
-		castGUID = UnitGUID(unit)
-		castName = UnitName(unit)
-		targetUnit = nil	
+	if( targetTimer and UnitCanAssist("player", unit) ) then
+		setCastData(3, UnitGUID(unit))
 	end
+
+	targetTimer = nil
 end
 
--- This is called by the secure code when you have a cursor waiting for a cast then click on a secure frame
--- with the "target" attribute set, but not when you use a target keybinding. Basically, if this is called
--- we know that this is the unit it's being cast on without a doubt
+-- Works the same as the above except it's called when you have a cursor icon and you click on a secure frame with a target attribute set
 function PendHeals:SpellTargetUnit(unit)
-	checkUnitID = nil
-	castGUID = UnitGUID(unit)
-	castName = UnitName(unit)
+	if( targetTimer and UnitCanAssist("player", unit) ) then
+		setCastData(3, UnitGUID(unit))
+	end
+	
+	targetTimer = nil
 end
 
--- This is called pretty much no matter what, the only time it's not for a click casting or buttons coded specifically
--- with a macro or spell cast into them instead of an action button
+-- Called whenever an action button is clicked, this is generally the last of a function chain, CastSpellBy* is called first.
 function PendHeals:UseAction(action, unit)
-	-- If the spell is waiting for a target and it's a spell action button then we know
-	-- that the GUID has to be mouseover or a key binding cast, macros and such call CastSpellBy*
-	if( SpellIsTargeting() ) then
-		local type, _, _, spellID = GetActionInfo(action)
-		if( type == "spell" ) then
-			checkUnitID = GetSpellInfo(spellID)
-		end
-	-- Specifically got a unit to cast this on, generally happens for things like binding self or focus casts
-	elseif( unit ) then
-		castGUID = UnitGUID(unit)
-		castName = UnitName(unit)
-	-- Nothing else, meaning it pretty much has to be a target
-	elseif( not castGUID ) then
-		castGUID = UnitCanAssist("player", "target") and UnitGUID("target") or GetCVarBool("autoSelfCast") and UnitGUID("player")
-		castName = UnitCanAssist("player", "target") and UnitName("target") or GetCVarBool("autoSelfCast") and UnitName("player")
+	-- If the spell is waiting for a target and it's a spell action button then we know that the GUID has to be mouseover or a key binding cast.
+	if( unit and UnitCanAssist("player", unit)  ) then
+		setCastData(3, UnitGUID(unit))
+	-- No unit, or it's a unit we can't assist 
+	elseif( not SpellIsTargeting() ) then
+		setCastData(2, UnitCanAssist("player", "target") and UnitGUID("target") or UnitGUID("player"))
 	end
 end
 
 -- These are called by hardcoded casts in a button and by the macro system
 function PendHeals:CastSpellByID(spellID, unit)
-	if( not unit and not UnitExists("mouseover") ) then
-		checkUnitID = GetSpellInfo(spellName)
-	elseif( unit ) then
-		checkUnitID = nil
-		castGUID = UnitGUID(unit)
-		castName = UnitName(unit)
+	if( unit and UnitCanAssist("player", unit)  ) then
+		setCastData(3, UnitGUID(unit))
+	elseif( not SpellIsTargeting() ) then
+		setCastData(2, UnitCanAssist("player", "target") and UnitGUID("target") or UnitGUID("player"))
 	end
 end
 
 function PendHeals:CastSpellByName(spellName, unit)
-	-- If we don't know the unit, and mouseover doesn't exist then it's either being cast on the player through the 3D world
-	-- or it's being cast through a key binding
-	if( not unit and not UnitExists("mouseover") ) then
-		checkUnitID = spellName
-	elseif( unit ) then
-		checkUnitID = nil
-		castGUID = UnitGUID(unit)
-		castName = UnitName(unit)
+	if( unit and UnitCanAssist("player", unit) ) then
+		setCastData(3, UnitGUID(unit))
+	elseif( not SpellIsTargeting() ) then
+		setCastData(2, UnitCanAssist("player", "target") and UnitGUID("target") or UnitGUID("player"))
 	end
 end
 
@@ -732,25 +727,39 @@ function PendHeals:OnInitialize()
 		self:PLAYER_TALENT_UPDATE()
 	end
 	
+	-- This resets the target timer next OnUpdate, the user would basically have to press the target button twice within
+	-- <0.10 seconds, more like <0.05 to be able to bug it out
+	self.resetFrame = self.resetFrame or CreateFrame("Frame")
+	self.resetFrame:Hide()
+	self.resetFrame:SetScript("OnUpdate", function(self)
+		targetTimer = nil
+		self:Hide()
+	end)
+	
 	-- You can't unhook secure hooks after they are done, so will hook once and the PendHeals table will update with the latest functions
 	-- automagically. If a new function is ever used it'll need a specific variable to indicate those set of hooks.
 	hooksecurefunc("TargetUnit", function(...)
+		--print(GetTime(), "TargetUnit", UnitExists("mouseover"), ...)
 		PendHeals:TargetUnit(...)
 	end)
 
 	hooksecurefunc("SpellTargetUnit", function(...)
+		--print(GetTime(), "SpellTargetUnit", UnitExists("mouseover"), ...)
 		PendHeals:SpellTargetUnit(...)
 	end)
 
 	hooksecurefunc("UseAction", function(...)
+		--print(GetTime(), "UseAction", UnitExists("mouseover"), ...)
 		PendHeals:UseAction(...)
 	end)
 
 	hooksecurefunc("CastSpellByID", function(...)
+		--print(GetTime(), "CastSPellByID", UnitExists("mouseover"), ...)
 		PendHeals:CastSpellByID(...)
 	end)
 
 	hooksecurefunc("CastSpellByName", function(...)
+		--print(GetTime(), "CastSpellByName", UnitExists("mouseover"), ...)
 		PendHeals:CastSpellByName(...)
 	end)
 end
