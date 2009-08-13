@@ -5,11 +5,16 @@ assert(LibStub, string.format("%s requires LibStub.", major))
 local PendHeals = LibStub:NewLibrary(major, minor)
 if( not PendHeals ) then return end
 
+-- This needs to be bumped if there is a major change that breaks the comm format
+local COMM_PREFIX = "LPH10"
+
+
 PendHeals.callbacks = PendHeals.callbacks or LibStub:GetLibrary("CallbackHandler-1.0"):New(PendHeals)
 
 PendHeals.glyphCache = PendHeals.glyphCache or {}
 PendHeals.playerModifiers = PendHeals.playerModifiers or {}
-PendHeals.auraData = PendHeals.auraData or {}
+PendHeals.guidToGroup = PendHeals.guidToGroup or {}
+PendHeals.guidToUnit = PendHeals.guidToUnit or {}
 
 -- Validation for passed arguments
 if( not PendHeals.tooltip ) then
@@ -84,10 +89,10 @@ end
 
 -- Healing class data
 -- Thanks to Gagorian (DrDamage) for letting me steal his formulas and such
-local playerModifiers, averageHeal, glyphCache = PendHeals.playerModifiers, PendHeals.averageHeal, PendHeals.glyphCache
-local rankNumbers = PendHeals.rankNumbers
-local currentRelicID, spellData, talentData, CalculateHealing, AuraHandler
-local hotTotals, auraData, equippedSetPieces, itemSetsData
+local playerModifiers, averageHeal, rankNumbers, glyphCache = PendHeals.playerModifiers, PendHeals.averageHeal, PendHeals.rankNumbers, PendHeals.glyphCache
+local guidToUnit, guidToGroup = PendHeals.guidToUnit, PendHeals.guidToGroup
+local currentRelicID, CalculateHealing, GetHealTargets, AuraHandler
+local spellData, talentData, equippedSetPieces, itemSetsData = {}, {}, {}, {}
 local playerHealModifier = 1
 
 -- UnitBuff priortizes our buffs over everyone elses when there is a name conflict, so yay for that
@@ -100,17 +105,16 @@ local function unitHasAura(unit, name)
 end
 
 -- This is slightly confusing. It seems that there are still two penalties, one for using spells below 20 and another for downranking
--- in general, as downranking in general isn't really an issue for now, I'll skip that check and keep the <20 one in until I know for usre
+-- in general, as downranking in general isn't really an issue for now, I'll skip that check and keep the <20 one in until I know for sure
 -- that they are both still active.
 --local function calculateDownRank(spellName, rank)
 --	local level = rank and spellData.level[rank]
 --	return level and level < 20 and (1 - ((20 - level) * 0.375)) or 1
 --end
 
+-- DRUIDS
+-- All data is accurate as of 3.2.0 (build 10192)
 local function loadDruidData()
-	spellData, talentData, hotTotals, auraData = {}, {}, {}, {}
-	equippedSetPieces, itemSetsData = {}, {}
-	
 	-- Spell data
 	local Rejuvenation = GetSpellInfo(774)
 	local Lifebloom = GetSpellInfo(33763)
@@ -132,13 +136,13 @@ local function loadDruidData()
 
 	-- Regrowth, this will be a bit of an annoying spell to handle once HOT support is added
 	local Regrowth = GetSpellInfo(8936)
-	spellData[Regrowth] = {level = {12, 18, 24, 30, 36, 42, 48, 54, 60, 65, 71, 77}, coeff = 0.2867, type = "heal"}
+	spellData[Regrowth] = {level = {12, 18, 24, 30, 36, 42, 48, 54, 60, 65, 71, 77}, coeff = 0.2867}
 	-- Heaing Touch
 	local HealingTouch = GetSpellInfo(5185)
-	spellData[HealingTouch] = {level = {1, 8, 14, 20, 26, 32, 38, 44, 50, 56, 60, 62, 69, 74, 79}, type = "heal"}
+	spellData[HealingTouch] = {level = {1, 8, 14, 20, 26, 32, 38, 44, 50, 56, 60, 62, 69, 74, 79}}
 	-- Nourish
 	local Nourish = GetSpellInfo(50464)
-	spellData[Nourish] = {level = {80}, coeff = 0.358005, type = "heal"}
+	spellData[Nourish] = {level = {80}, coeff = 0.358005}
 	
 	-- Talent data, these are filled in later and modified on talent changes
 	-- Master Shapeshifter (Multi)
@@ -169,6 +173,7 @@ local function loadDruidData()
 	--itemSetsData["T8 Resto"] = {46183, 46184, 46185, 46186, 46187, 45345, 45346, 45347, 45348, 45349} 
 	--itemSetsData["T9 Resto"] = {48102, 48129, 48130, 48131, 48132, 48153, 48154, 48155, 48156, 48157, 48133, 48134, 48135, 48136, 48137, 48142, 48141, 48140, 48139, 48138, 48152, 48151, 48150, 48149, 48148, 48143, 48144, 48145, 48146, 48147}
 	
+	local hotTotals, auraData = {}, {}
 	AuraHandler = function(guid, unit)
 		hotTotals[guid] = 0
 		if( unitHasAura(unit, Rejuvenation) ) then hotTotals[guid] = hotTotals[guid] + 1 end
@@ -180,6 +185,10 @@ local function loadDruidData()
 		else
 			auraData[guid] = nil
 		end
+	end
+
+	GetHealTargets = function(guid, healAmount, spellName, spellRank)
+		return guid
 	end
 	
 	CalculateHealing = function(guid, spellName, spellRank)
@@ -201,7 +210,6 @@ local function loadDruidData()
 			end
 		end
 		
-		-- Accurate as of 3.2.0 (build 10192)
 		if( spellName == Regrowth ) then
 			-- Glyph of Regrowth - +20% if target has Regrowth
 			if( glyphCache[54743] and auraData[guid] ) then
@@ -210,7 +218,6 @@ local function loadDruidData()
 			
 			spellPower = spellPower * ((spellData[Regrowth].coeff * 1.88) * (1 + talentData[EmpoweredRejuv].current))
 		
-		-- Accurate as of 3.2.0 (build 10192)
 		elseif( spellName == Nourish ) then
 			-- 46138 - Idol of Flourishing Life, +187 Nourish SP
 			if( currentRelicID == 46138 ) then
@@ -237,7 +244,6 @@ local function loadDruidData()
 			
 			spellPower = spellPower * ((spellData[Nourish].coeff * 1.88) + talentData[EmpoweredTouch].spent * 0.10)
 
-		-- Accurate as of 3.2.0 (build 10192)
 		elseif( spellName == HealingTouch ) then
 			-- 28568 - Idol of the Avian Heart, 136 base healing to Healing Touch
 			if( currentRelicID == 28568 ) then
@@ -264,8 +270,113 @@ local function loadDruidData()
 			multiFactor = multiFactor * (1 - ((20 - spellData[spellName].level[rank]) * 0.0375))
 		end
 		
-		-- Decimal accuracy is unnecessary and a single digit +/- won't make a difference
-		return math.ceil((addFactor * ((healAmount + spellPower) * multiFactor)) * playerHealModifier)
+		healAmount = addFactor * (healAmount + spellPower * multiFactor)
+		
+		-- 100% chance to crit with Nature, this mostly just covers fights like Loatheb where you will basically have 100% crit
+		if( GetSpellCritChance(4) >= 100 ) then
+			healAmount = healAmount * 1.50
+		end
+		
+		return math.ceil(healAmount * playerHealModifier)
+	end
+end
+
+-- PALADINS
+-- All data is accurate as of 3.2.0 (build 10192)
+local function loadPaladinData()
+	-- Spell data
+	local HolyLight = GetSpellInfo(635)
+	spellData[HolyLight] = {level = {1, 6, 14, 22, 30, 38, 46, 54, 60, 62, 70, 75, 80}, coeff = 1.66 / 1.88}
+	local FlashofLight = GetSpellInfo(19750)
+	spellData[FlashofLight] = {level = {20, 26, 34, 42, 50, 58, 66, 74, 79}, coeff = 1.009/1.88}
+	
+	-- Talent data
+	-- Need to figure out a way of supporting +6% healing from imp devo aura, might not be able to
+	-- Healing Light (Add)
+	local HealingLight = GetSpellInfo(20237)
+	talentData[HealingLight] = {mod = 0.04, current = 0}
+	-- Divinity (Add)
+	local Divinity = GetSpellInfo(63646)
+	talentData[Divinity] = {mod = 0.01, current = 0}
+	-- 100% of your heal on someone within range of your beacon heals the beacon target too
+	local BeaconofLight = GetSpellInfo(53563)
+	-- 100% chance to crit
+	local DivineFavor = GetSpellInfo(20216)
+	-- Seal of Light + Glyph = 5% healing
+	local SealofLight = GetSpellInfo(20165)
+	
+	local favorThrottle = 0
+
+	-- Am I slightly crazy for adding level <40 glyphs? Yes!
+	local flashLibrams = {[42615] = 375, [42614] = 331, [42613] = 293, [42612] = 204, [25644] = 79, [23006] = 43, [23201] = 28}
+	local holyLibrams = {[45436] = 160, [40268] = 141, [28296] = 47}
+		
+	-- Need the GUID of whoever has beacon on them so we can make sure they are visible to us and so we can check the mapping
+	local activeBeaconGUID
+	AuraHandler = function(guid, unit)
+		if( unitHasAura(unit, BeaconofLight) ) then
+			activeBeaconGUID = guid
+		elseif( activeBeaconGUID == guid ) then
+			activeBeaconGUID = nil
+		end
+	end
+	
+	-- Check for beacon when figuring out who to heal
+	GetHealTargets = function(guid, healAmount, spellName, spellRank)
+		if( activeBeaconGUID and activeBeaconGUID ~= guid and guidToUnit[activeBeaconGUID] and UnitExists(guidToUnit[activeBeaconGUID]) ) then
+			return guid, activeBeaconGUID
+		end
+		
+		return guid
+	end
+	
+	-- If only every other class was as easy as Paladins
+	CalculateHealing = function(guid, spellName, spellRank)
+		local healAmount = PendHeals.averageHeal[spellName .. spellRank]
+		local spellPower = GetSpellBonusHealing()
+		local multiFactor, addFactor = 1, 1
+		local rank = PendHeals.rankNumbers[spellRank]
+		
+		-- Glyph of Seal of Light, +5% healing if the player has Seal of Light up
+		if( glyphCache[54943] and unitHasAura("player", SealofLight) ) then
+			multiFactor = multiFactor * 1.05
+		end
+		
+		addFactor = addFactor + talentData[Divinity].current
+		addFactor = addFactor + talentData[HealingLight].current
+		
+		if( currentRelicID ) then
+			if( spellName == HolyLight and holyLibrams[currentRelicID] ) then
+				spellPower = spellPower + holyLibrams[currentRelicID]
+			elseif( spellName == FlashofLight and flashLibrams[currentRelicID] ) then
+				spellPower = spellPower + flashLibrams[currentRelicID]
+			end
+		end
+		
+		spellPower = spellPower * (spellData[spellName].coeff * 1.88)
+		
+		-- Note because I always forget:
+		-- Multiplictive modifiers are applied to the spell power after all other calculations
+		-- Additive modifiers are applied to the end amount after all calculations
+		if( spellData[spellName].level[rank] < 20 ) then
+			multiFactor = multiFactor * (1 - ((20 - spellData[spellName].level[rank]) * 0.0375))
+		end
+		
+		healAmount = addFactor * (healAmount + spellPower * multiFactor)
+
+		-- Divine Favor is 100% chance to crit, so assume they crit, if the user casts Divine Favor and 
+		-- Going to add this in but need to solve a problem: If the player casts favor, casts a spell then "queue casts"
+		-- another spell, it will think both of them are crits, it's probably going to have to flag a spell as having "used"
+		-- favor until the spell is interrupted or it finishes.
+		--if( unitHasAura("player", DivineFavor) and favorThrottle < GetTime() ) then
+		--	healAmount = healAmount * 1.50
+		
+		-- Or the player has over a 95% chance to crit with Holy spells
+		if( GetSpellCritChance(2) >= 100 ) then
+			healAmount = healAmount * 1.50
+		end
+	
+		return math.ceil(healAmount * playerHealModifier)
 	end
 end
 
@@ -536,12 +647,12 @@ end
 -- Spell cast magic
 -- When auto self cast is on, the UNIT_SPELLCAST_SENT event will always come first followed by the funciton calls
 -- Otherwise either SENT comes first then function calls, or some function calls then SENT then more function calls
-local guidPriority, castGUID, castID, targetUnit, mouseoverGUID, castName, fallbackGUID, targetTimer
+local guidPriority, castGUID, castID, targetUnit, mouseoverGUID, castName, targetTimer
 
 -- Deals with the fact that functions are called differently, priorities are basically:
 -- 1 = might be it, 2 = should be it, 3 = definitely it
 local function setCastData(priority, guid)
-	if( guidPriority and guidPriority >= priority ) then return end
+	if( not guid or ( guidPriority and guidPriority >= priority ) ) then return end
 		
 	castGUID = guid
 	guidPriority = priority
@@ -553,8 +664,8 @@ end
 -- This would be another way of getting GUIDs, by keeping a map and marking conflicts due to pets (or vehicles)
 -- we would know that you can't rely on the name exactly and that the other methods are needed. While they seem
 -- to be accurate and not have any issues, it could be a good solution as a better safe than sorry option.
-function PendHeals:UNIT_SPELLCAST_SENT(unit, spellName, rank, castOn)
-	if( unit ~= "player" or not self.averageHeal[spellName .. rank] ) then return end
+function PendHeals:UNIT_SPELLCAST_SENT(unit, spellName, spellRank, castOn)
+	if( unit ~= "player" or not spellData[spellName] or not self.averageHeal[spellName .. spellRank] ) then return end
 
 	-- Self cast is off which means it's possible to have a spell waiting for a target.
 	-- It's possible that it's the mouseover unit, but if we see a *TargetUnit call then we know it's that unit for sure
@@ -565,34 +676,36 @@ function PendHeals:UNIT_SPELLCAST_SENT(unit, spellName, rank, castOn)
 		setCastData(1, mouseoverGUID)
 	end
 	
-	fallbackGUID = UnitGUID(castOn)
+	-- As per above, this is our last ditch effort to get a GUID
+	setCastData(0, UnitGUID(castOn))
 end
 
 function PendHeals:UNIT_SPELLCAST_START(unit, spellName, spellRank, id)
-	if( unit ~= "player" or not self.averageHeal[spellName .. spellRank] ) then return end
-	castGUID = castGUID or fallbackGUID
-		
+	if( unit ~= "player" or not spellData[spellName] or not self.averageHeal[spellName .. spellRank] ) then return end
+
+	-- CalculateHeaing figures out the actual heal amount
 	local amount = CalculateHealing(castGUID, spellName, spellRank)
-	print(castGUID, spellName, spellRank, amount)
+	-- GetHealTargets will figure out who the heal is supposed to land on
+	print(UnitName(unit), spellName, spellRank, amount, GetHealTargets(castGUID, amount, spellName, spellRank))
 	
 	castID = id
 	castGUID = nil
 	guidPriority = nil
 end
 
-function PendHeals:UNIT_SPELLCAST_SUCCEEDED(unit, spellName, rank, id)
+function PendHeals:UNIT_SPELLCAST_SUCCEEDED(unit, spellName, spellRank, id)
 	if( unit ~= "player" or id ~= castID ) then return end
 	castGUID = nil
 	guidPriority = nil
 end
 
-function PendHeals:UNIT_SPELLCAST_STOP(unit, spellName, rank, id)
+function PendHeals:UNIT_SPELLCAST_STOP(unit, spellName, spellRank, id)
 	if( unit ~= "player" or id ~= castID ) then return end
 	castGUID = nil
 	guidPriority = nil
 end
 
-function PendHeals:UNIT_SPELLCAST_CHANNEL_STOP(unit, spellName, rank)
+function PendHeals:UNIT_SPELLCAST_CHANNEL_STOP(unit, spellName, spellRank)
 	if( unit ~= "player" ) then return end
 	castGUID = nil
 end
@@ -656,6 +769,89 @@ function PendHeals:CastSpellByName(spellName, unit)
 	end
 end
 
+-- Make sure we don't have invalid units in this
+local function sanityCheckMapping()
+	for guid, unit in pairs(PendHeals.guidToUnit) do
+		if( UnitGUID(unit) ~= guid ) then
+			PendHeals.guidToUnit[guid] = nil
+			PendHeals.guidToGroup[guid] = nil
+		end
+	end
+end
+
+-- Keeps track of pet GUIDs, pets are considered vehicles too so this lets us map a GUID to vehicles
+function PendHeals:UNIT_PET(unit)
+	unit = unit == "player" and "pet" or unit .. "pet"
+	
+	local guid = UnitGUID(unit)
+	if( guid ) then
+		self.guidToUnit[guid] = unit
+	end
+end
+
+-- Keep track of party GUIDs, ignored in raids as RRU will handle that mapping
+local wasInParty
+function PendHeals:PARTY_MEMBERS_CHANGED()
+	if( GetNumRaidMembers() > 0 ) then return end
+	
+	if( GetNumPartyMembers() == 0 ) then
+		table.wipe(self.guidToUnit)
+		
+		self.guidToUnit[UnitGUID("player")] = "player"
+
+		wasInParty = nil
+		wasInRaid = nil
+		return
+	end
+	
+	for i=1, MAX_PARTY_MEMBERS do
+		local unit = "party" .. i
+		if( UnitExists(unit) ) then
+			self.guidToUnit[UnitGUID(unit)] = unit
+			
+			if( not wasInParty ) then
+				self:UNIT_PET(unit)
+			end
+		end
+	end
+
+	sanityCheckMapping()
+	wasInParty = true
+end
+
+-- Keep track of raid GUIDs
+local wasInRaid
+function PendHeals:RAID_ROSTER_UPDATE()
+	-- Left raid, clear any cache we had
+	if( GetNumRaidMembers() == 0 ) then
+		table.wipe(self.guidToUnit)
+		table.wipe(self.guidToGroup)
+
+		self.guidToUnit[UnitGUID("player")] = "player"
+		wasInRaid = nil
+		wasInParty = nil
+		return
+	end
+	
+	-- Add new members
+	for i=1, MAX_RAID_MEMBERS do
+		local unit = "raid" .. i
+		if( UnitExists(unit) ) then
+			local guid = UnitGUID(unit)
+			self.guidToUnit[guid] = unit
+			self.guidToGroup[guid] = select(3, GetRaidRosterInfo(i))
+			
+			if( not wasInRaid ) then
+				self:UNIT_PET(unit)
+			end
+		end
+	end
+	
+	wasInRaid = true
+	sanityCheckMapping()
+end
+
+-- PLAYER_ALIVE = got talent data
 function PendHeals:PLAYER_ALIVE()
 	self:PLAYER_TALENT_UPDATE()
 	self.frame:UnregisterEvent("PLAYER_ALIVE")
@@ -673,7 +869,7 @@ function PendHeals:OnInitialize()
 	elseif( class == "SHAMAN" ) then
 	
 	elseif( class == "PALADIN" ) then
-	
+		loadPaladinData()
 	elseif( class == "PRIEST" ) then
 	
 	-- Have to be ready for the next expansion!
@@ -688,6 +884,9 @@ function PendHeals:OnInitialize()
 			glyphCache[id] = glyphID
 		end
 	end
+
+	-- Oddly enough player GUID is not available on file load either, so keep the map of player GUID to themselves too
+	self.guidToUnit[UnitGUID("player")] = "player"
 	
 	-- Figure out the initial relic
 	self:PLAYER_EQUIPMENT_CHANGED()
@@ -760,7 +959,7 @@ PendHeals.frame:SetScript("OnEvent", OnEvent)
 -- If they aren't a healer, all they need to know about are modifier changes
 local playerClass = select(2, UnitClass("player"))
 --if( playerClass ~= "DRUID" and playerClass ~= "PRIEST" and playerClass ~= "SHAMAN" and playerClass ~= "PALADIN" ) then
-if( playerClass ~= "DRUID" ) then
+if( playerClass ~= "DRUID" and playerClass ~= "PALADIN" ) then
 	return
 end
 
@@ -776,6 +975,9 @@ PendHeals.frame:RegisterEvent("GLYPH_ADDED")
 PendHeals.frame:RegisterEvent("GLYPH_REMOVED")
 PendHeals.frame:RegisterEvent("GLYPH_UPDATED")
 PendHeals.frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+PendHeals.frame:RegisterEvent("RAID_ROSTER_UPDATE")
+PendHeals.frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+PendHeals.frame:RegisterEvent("UNIT_PET")
 
 -- If the player is not logged in yet, then we're still loading and will watch for PLAYER_LOGIN to assume everything is initialized
 -- if we're already logged in then it was probably LOD loaded
