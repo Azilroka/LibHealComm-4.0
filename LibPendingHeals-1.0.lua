@@ -87,7 +87,8 @@ end
 local playerModifiers, averageHeal, glyphCache = PendHeals.playerModifiers, PendHeals.averageHeal, PendHeals.glyphCache
 local rankNumbers = PendHeals.rankNumbers
 local currentRelicID, spellData, talentData, CalculateHealing, AuraHandler
-local playerHealModifier, hotTotals, auraData, equippedSetPieces, itemSetsData
+local hotTotals, auraData, equippedSetPieces, itemSetsData
+local playerHealModifier = 1
 
 -- UnitBuff priortizes our buffs over everyone elses when there is a name conflict, so yay for that
 local function unitHasAura(unit, name)
@@ -168,8 +169,7 @@ local function loadDruidData()
 	--itemSetsData["T8 Resto"] = {46183, 46184, 46185, 46186, 46187, 45345, 45346, 45347, 45348, 45349} 
 	--itemSetsData["T9 Resto"] = {48102, 48129, 48130, 48131, 48132, 48153, 48154, 48155, 48156, 48157, 48133, 48134, 48135, 48136, 48137, 48142, 48141, 48140, 48139, 48138, 48152, 48151, 48150, 48149, 48148, 48143, 48144, 48145, 48146, 48147}
 	
-	AuraHandler = function(unit)
-		local guid = UnitGUID(unit)
+	AuraHandler = function(guid, unit)
 		hotTotals[guid] = 0
 		if( unitHasAura(unit, Rejuvenation) ) then hotTotals[guid] = hotTotals[guid] + 1 end
 		if( unitHasAura(unit, Lifebloom) ) then hotTotals[guid] = hotTotals[guid] + 1 end
@@ -265,9 +265,7 @@ local function loadDruidData()
 		end
 		
 		-- Decimal accuracy is unnecessary and a single digit +/- won't make a difference
-		healAmount = math.ceil(addFactor * ((healAmount + spellPower) * multiFactor))
-		
-		return healAmount
+		return math.ceil((addFactor * ((healAmount + spellPower) * multiFactor)) * playerHealModifier)
 	end
 end
 
@@ -278,104 +276,79 @@ end
 -- Healing modifiers
 PendHeals.currentModifiers = PendHeals.currentModifiers or {}
 
-if( not PendHeals.activeModifiers ) then
-	PendHeals.activeModifiers = setmetatable({}, {
-		__index = function(tbl, index)
-			tbl[index] = {}
-			return tbl[index]
-		end,
-	})
-end
-
--- These are fun spells, they are long term so we can't exactly rely on the combat log as much
--- UNIT_AURA has more info
-PendHeals.longAuras = {
-	-- Demon Armor
-	[GetSpellInfo(687)] = function(name) return name and 1.20 end,
-	-- Tenacity
-	[GetSpellInfo(58549)] = function(name, rank, icon, stack) return name and stack ^ 1.18 end
-}
-
 PendHeals.selfModifiers = PendHeals.selfModifiers or {
 	[64850] = 0.50, -- Unrelenting Assault
 	[65925] = 0.50, -- Unrelenting Assault
 	[54428] = 0.50, -- Divine Plea
 	[64849] = 0.75, -- Unrelenting Assault
-	[66011] = 1.20, -- Avenging Wrath
+	[31884] = 1.20, -- Avenging Wrath
 }
 
+-- There is one spell currently that has a name conflict, which is ray of Pain from the Void Walkers in Nagrand
+-- if it turns out there are more later on (which is doubtful) I'll change it
 PendHeals.healingModifiers = PendHeals.healingModifiers or {
-	[30843] = 0.00, -- Enfeeble
-	[41292] = 0.00, -- Aura of Suffering
-	[59513] = 0.00, -- Embrace of the Vampyr
-	[55593] = 0.00, -- Necrotic Aura
-	[28776] = 0.10, -- Necrotic Poison (Heroic)
-	[34625] = 0.25, -- Demolish
-	[34366] = 0.25, -- Ebon Poison
-	[19716] = 0.25, -- Gehennas' Curse
-	[24674] = 0.25, -- Veil of Shadow
-	[54121] = 0.25, -- Necrotic Poison (Non heroic)
+	[GetSpellInfo(30843)] = 0.00, -- Enfeeble
+	[GetSpellInfo(41292)] = 0.00, -- Aura of Suffering
+	[GetSpellInfo(59513)] = 0.00, -- Embrace of the Vampyr
+	[GetSpellInfo(55593)] = 0.00, -- Necrotic Aura
+	[GetSpellInfo(34625)] = 0.25, -- Demolish
+	[GetSpellInfo(34366)] = 0.25, -- Ebon Poison
+	[GetSpellInfo(19716)] = 0.25, -- Gehennas' Curse
+	[GetSpellInfo(24674)] = 0.25, -- Veil of Shadow
 	-- Despite the fact that Wound Poison uses the same 50% now, it's a unique spellID and buff name for each rank
-	[13218] = 0.50, -- 1
-	[13222] = 0.50, -- 2
-	[13223] = 0.50, -- 3
-	[13224] = 0.50, -- 4
-	[27189] = 0.50, -- 5
-	[57974] = 0.50, -- 6
-	[57975] = 0.50, -- 7
+	[GetSpellInfo(13218)] = 0.50, -- 1
+	[GetSpellInfo(13222)] = 0.50, -- 2
+	[GetSpellInfo(13223)] = 0.50, -- 3
+	[GetSpellInfo(13224)] = 0.50, -- 4
+	[GetSpellInfo(27189)] = 0.50, -- 5
+	[GetSpellInfo(57974)] = 0.50, -- 6
+	[GetSpellInfo(57975)] = 0.50, -- 7
 	[GetSpellInfo(20900)] = 0.50, -- Aimed Shot
 	[GetSpellInfo(21551)] = 0.50, -- Mortal Strike
-	[40599] = 0.50, -- Arcing Smash
-	[36917] = 0.50, -- Magma-Throwser's Curse
-	[23169] = 0.50, -- Brood Affliction: Green
+	[GetSpellInfo(40599)] = 0.50, -- Arcing Smash
+	[GetSpellInfo(36917)] = 0.50, -- Magma-Throwser's Curse
+	[GetSpellInfo(23169)] = 0.50, -- Brood Affliction: Green
 	[GetSpellInfo(22859)] = 0.50, -- Mortal Cleave
-	[36023] = 0.50, -- Deathblow
-	[36054] = 0.50, -- Deathblow
-	[13583] = 0.50, -- Curse of the Deadwood
-	[32378] = 0.50, -- Filet
-	[35189] = 0.50, -- Solar Strike
-	[32315] = 0.50, -- Soul Strike
-	[60084] = 0.50, -- The Veil of Shadow
-	[45885] = 0.50, -- Shadow Spike
-	[63038] = 0.75, -- Dark Volley
-	[52771] = 0.75, -- Wounding Strike
-	[59525] = 0.85, -- Ray of Pain
-	[54525] = 0.80, -- Shroud of Darkness (This might be wrong)
-	[48301] = 0.80, -- Mind Trauma (Improved Mind Blast)
-	[68391] = 0.80, -- Permafrost, the debuff is generic no way of seeing 7/13/20, go with 20
-	[34073] = 0.85, -- Curse of the Bleeding Hollow
-	[43410] = 0.90, -- Chop
-	[34123] = 1.06, -- Tree of Life
-	[64844] = 1.10, -- Divine Hymn
-	[38387] = 1.50, -- Bane of Infinity
-	[31977] = 1.50, -- Curse of Infinity
-	[41350] = 2.00, -- Aura of Desire
-	
-	-- These are stack modifiers, the listed value is what they are at one stack, once the stack event triggers it swaps to healingstackmods
-	[30423] = 1.01,
-	[45237] = 1.03,
-	[45241] = 1.04,
-	[45242] = 1.05,
-	[45347] = 0.96,
-	[60626] = 0.90,
-	[28467] = 0.90,
+	[GetSpellInfo(36023)] = 0.50, -- Deathblow
+	[GetSpellInfo(13583)] = 0.50, -- Curse of the Deadwood
+	[GetSpellInfo(32378)] = 0.50, -- Filet
+	[GetSpellInfo(35189)] = 0.50, -- Solar Strike
+	[GetSpellInfo(32315)] = 0.50, -- Soul Strike
+	[GetSpellInfo(60084)] = 0.50, -- The Veil of Shadow
+	[GetSpellInfo(45885)] = 0.50, -- Shadow Spike
+	[GetSpellInfo(63038)] = 0.75, -- Dark Volley
+	[GetSpellInfo(52771)] = 0.75, -- Wounding Strike
+	[GetSpellInfo(54525)] = 0.80, -- Shroud of Darkness (This might be wrong)
+	[GetSpellInfo(48301)] = 0.80, -- Mind Trauma (Improved Mind Blast)
+	[GetSpellInfo(68391)] = 0.80, -- Permafrost, the debuff is generic no way of seeing 7/13/20, go with 20
+	[GetSpellInfo(34073)] = 0.85, -- Curse of the Bleeding Hollow
+	[GetSpellInfo(43410)] = 0.90, -- Chop
+	[GetSpellInfo(34123)] = 1.06, -- Tree of Life
+	[GetSpellInfo(64844)] = 1.10, -- Divine Hymn
+	[GetSpellInfo(38387)] = 1.50, -- Bane of Infinity
+	[GetSpellInfo(31977)] = 1.50, -- Curse of Infinity
+	[GetSpellInfo(41350)] = 2.00, -- Aura of Desire
 }
 
--- If it's a buff then it gets +1 otherwise it gets -1, if we get a buff that decreases healing it needs to be changed
+-- Easier to toss functions on 4 extra functions than add extra checks
 PendHeals.healingStackMods = PendHeals.healingStackMods or {
-	[30423] = 0.01, -- Nether Portal - Dominance
-	[45237] = 0.03, -- Focused Will (Rank 1)
-	[45241] = 0.04, -- Focused Will (Rank 2)
-	[45242] = 0.05, -- Focused Will (Rank 3)
-	[45347] = 0.04, -- Dark Touched
-	[60626] = 0.10, -- Necrotic Strike
-	[28467] = 0.10, -- Mortal Wound
+	-- Tenacity
+	[GetSpellInfo(58549)] = function(name, rank, icon, stacks) return icon == "Interface\\Icons\\Ability_Warrior_StrengthOfArms" and stacks ^ 1.18 or 1 end,
+	-- Focused Will
+	[GetSpellInfo(45242)] = function(name, rank, icon, stacks) return 1 + (stacks * (0.02 + rankNumbers[rank])) end,
+	-- Nether Portal - Dominance
+	[GetSpellInfo(30423)] = function(name, rank, icon, stacks) return 1 + stacks * 0.01 end,
+	-- Dark Touched
+	[GetSpellInfo(45347)] = function(name, rank, icon, stacks) return 1 - stacks * 0.04 end, 
+	-- Necrotic Strike
+	[GetSpellInfo(60626)] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end, 
+	-- Mortal Wound
+	[GetSpellInfo(28467)] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end, 
 }
 
 local healingStackMods, selfModifiers = PendHeals.healingStackMods, PendHeals.selfModifiers
 local healingModifiers, longAuras = PendHeals.healingModifiers, PendHeals.longAuras
-local activeModifiers, currentModifiers = PendHeals.activeModifiers, PendHeals.currentModifiers
-
+local currentModifiers = PendHeals.currentModifiers
 local distribution, instanceType
 
 local function sendMessage(msg)
@@ -387,38 +360,22 @@ function PendHeals:ZONE_CHANGED_NEW_AREA()
 	local type = select(2, IsInInstance())
 	if( type ~= instanceType ) then
 		distribution = ( type == "pvp" or type == "arena" ) and "BATTLEGROUND" or "RAID"
-				
-		for _, auras in pairs(activeModifiers) do
-			for k in pairs(auras) do auras[k] = nil end
+			
+		-- Changes the value of Necrotic Poison based on zone type, if there are more difficulty type MS's I'll support those too
+		-- Heroic = 90%, Non-Heroic = 75%
+		if( GetRaidDifficulty() == 2 or GetRaidDifficulty() == 4 ) then
+			healingModifiers[GetSpellInfo(53121)] = 0.95
+		else
+			healingModifiers[GetSpellInfo(53121)] = 0.10
 		end
 	end
 	
 	instanceType = type
 end
 
--- Calculate the healing modifier
-local function recalculateModifiers(guid)
-	local increase, decrease = 1, 1
-	for _, modifier in pairs(activeModifiers[guid]) do
-		if( modifier >= 1 ) then
-			increase = increase * modifier
-		else
-			decrease = math.min(decrease, modifier)
-		end
-	end
-		
-	-- Check if modifier changed, send it off if so
-	local modifier = increase * decrease
-	if( currentModifiers[guid] ~= modifier ) then
-		print("Modifier changed", guid, modifier, increase, decrease)
-		PendHeals.callbacks:Fire("IncHeal_ModifierChanged", guid, modifier)
-		currentModifiers[guid] = modifier
-	end
-end
-
 -- Figure out the modifier for the players healing in general
--- all the calculations should be done at the end of the heal, it might make sense to 
--- recalculate and possible send out a new heal if something fades while casting
+-- Because Unrelenting Assault can be applied while casting, it should probably fire a heal changed if modifier changes
+-- while a cast is going on
 local function recalculatePlayerModifiers()
 	local increase, decrease = 1, 1
 	for _, modifier in pairs(playerModifiers) do
@@ -430,74 +387,84 @@ local function recalculatePlayerModifiers()
 	end
 	
 	playerHealModifier = increase * decrease
-	print("Player modifier changed", playerHealModifier, increase, decrease)
 end
 
--- This is hackish, the problem is some spells last too long to be something done while in combat, so instead I have to check certain auras
--- in UNIT_AURA because that way it's known for sure it's accurate. Every other debuff is something that 99% of the time is something we have
--- to be in range for.
--- Might make more sense to simply calculate this on heal as the odds of it actually being changed between the heal start and the heal end in 1s-3s is low
--- There are maybe 4-5 spells that use this, it could also make more sense to simply switch to it as the primary detection and fall back on this for everything else
--- or do some sort of invalidation after X seconds and requery it all, not sure yet.
+-- This solution bugs me a ton, I don't like having to do aura checks in UNIT_AURA it's rather wasteful
+-- pure CLEU isn't a good solution due to ranged issues, going to have to come a hybrid system I think. But as modifiers are local
+-- it's not something that will hugely affect the library either way as any change won't cause compatibility issues.
+-- on the other hand, I hate having to keep a table for every single GUID we are tracking. :|
+local alreadyAdded = {}
 function PendHeals:UNIT_AURA(unit)
 	if( not UnitIsPlayer(unit) or ( unit ~= "player" and not UnitPlayerOrPetInParty(unit) and not UnitPlayerOrPetInRaid(unit) ) ) then return end
-	
 	local guid = UnitGUID(unit)
-	for name, func in pairs(longAuras) do
-		local modifier = func(UnitBuff(unit, name))
-		if( ( modifier and not activeModifiers[guid][name] ) or ( modifier and not activeModifiers[guid][name] ) ) then
-			activeModifiers[guid][name] = modifier
-			recalculateModifiers(guid)
+	local increase, decrease = 1, 1
+	
+	-- Scan buffs
+	local id = 1
+	while( true ) do
+		local name, rank, icon, stack = UnitAura(unit, id, "HELPFUL")
+		if( not name ) then break end
+		-- Don't want to calculate a modifier twice, like ToL will show be extra 1.06 for Druids in TOL
+		if( not alreadyAdded[name] ) then
+			if( healingModifiers[name] ) then
+				increase = increase * healingModifiers[name]
+			elseif( healingStackMods[name] ) then
+				increase = increase * healingStackMods[name](name, rank, icon, stack)
+			end
+			
+			alreadyAdded[name] = true
 		end
+		
+		id = id + 1
 	end
+
+	-- Scan debuffs
+	id = 1
+	while( true ) do
+		local name, rank, icon, stack = UnitAura(unit, id, "HARMFUL")
+		if( not name ) then break end
+		if( healingModifiers[name] ) then
+			decrease = math.min(decrease, healingModifiers[name])
+		elseif( healingStackMods[name] ) then
+			decrease = math.min(decrease, healingStackMods[name](name, rank, icon, stack))
+		end
+		
+		id = id + 1
+	end
+	
+	-- Check if modifier changed
+	local modifier = increase * decrease
+	if( modifier ~= currentModifiers[guid] ) then
+		if( currentModifiers[guid] or modifier ~= 1 ) then
+			self.callbacks:Fire("PendingHeals_ModifierChanged", guid, modifier)
+		end
+		
+		currentModifiers[guid] = modifier
+	end
+
+	table.wipe(alreadyAdded)
 	
 	-- Class has a specific monitor it needs for auras
 	if( AuraHandler ) then
-		AuraHandler(unit)
+		AuraHandler(guid, unit)
 	end
 end
 
 -- Monitor aura changes
-local GROUPED_FILTER = bit.bor(COMBATLOG_OBJECT_AFFILIATION_PARTY, COMBATLOG_OBJECT_AFFILIATION_RAID, COMBATLOG_OBJECT_AFFILIATION_MINE)
-local eventRegistered = {["SPELL_AURA_REMOVED_DOSE"] = true, ["SPELL_AURA_APPLIED_DOSE"] = true, ["SPELL_AURA_REMOVED"] = true, ["SPELL_AURA_APPLIED"] = true}
+local COMBATLOG_OBJECT_AFFILIATION_MINE = COMBATLOG_OBJECT_AFFILIATION_MINE
+local eventRegistered = {["SPELL_AURA_REMOVED"] = true, ["SPELL_AURA_APPLIED"] = true}
 function PendHeals:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags, ...)
-	if( not eventRegistered[eventType] or bit.band(sourceFlags, GROUPED_FILTER) == 0 ) then return end
-					
-	-- Aura gained
+	if( not eventRegistered[eventType] or bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) ~= COMBATLOG_OBJECT_AFFILIATION_MINE ) then return end
+	
 	if( eventType == "SPELL_AURA_APPLIED" ) then
 		local spellID, spellName, spellSchool, auraType = ...
-		local modifier = healingModifiers[spellID] or healingModifiers[spellName]
-		if( modifier ) then
-			activeModifiers[sourceGUID][spellID] = modifier
-			recalculateModifiers(sourceGUID)
-		end
-		
 		if( selfModifiers[spellID] ) then
 			playerModifiers[spellID] = selfModifiers[spellID]
-		end
-			
-	-- Aura stacked
-	elseif( eventType == "SPELL_AURA_APPLIED_DOSE" or eventType == "SPELL_AURA_REMOVED_DOSE" ) then
-		local spellID, spellName, spellSchool, auraType, stackCount = ...
-
-		-- This will have to be updated later if we get a stacking buff that reduces healing
-		local modifier = healingStackMods[spellID]
-		if( modifier ) then
-			if( auraType == "BUFF" ) then
-				activeModifiers[sourceGUID][spellID] = 1.0 + (healingStackMods[spellID] * stackCount)
-			else
-				activeModifiers[sourceGUID][spellID] = 1.0 - (healingStackMods[spellID] * stackCount)
-			end
+			recalculatePlayerModifiers()
 		end
 		
-	-- Aura faded
 	elseif( eventType == "SPELL_AURA_REMOVED" ) then
 		local spellID, spellName, spellSchool, auraType = ...
-		if( activeModifiers[sourceGUID][spellID] ) then
-			activeModifiers[sourceGUID][spellID] = nil
-			recalculateModifiers(sourceGUID)
-		end
-		
 		if( playerModifiers[spellID] ) then
 			playerModifiers[spellID] = nil
 			recalculatePlayerModifiers()
@@ -633,6 +600,12 @@ end
 -- Need to keep track of mouseover as it can change in the split second after/before casts
 function PendHeals:UPDATE_MOUSEOVER_UNIT()
 	mouseoverGUID = UnitCanAssist("player", "mouseover") and UnitGUID("mouseover")
+	
+	-- This might be necessary if I want to account for the fact that some people do world PVP, but it only matters
+	-- if the healing target is ungrouped
+	--if( not UnitExists(UnitName("mouseover")) ) then
+	--	self:UNIT_AURA("mouseover")
+	--end
 end
 
 
@@ -718,6 +691,9 @@ function PendHeals:OnInitialize()
 	
 	-- Figure out the initial relic
 	self:PLAYER_EQUIPMENT_CHANGED()
+	
+	-- ZCNE is not called when you first login/reload, so call it once more to be safe
+	self:ZONE_CHANGED_NEW_AREA()
 	
 	-- When first logging in talent data isn't available until at least PLAYER_ALIVE, so if we don't have data
 	-- will wait for that event otherwise will just cache it right now
