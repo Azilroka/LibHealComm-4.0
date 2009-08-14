@@ -104,13 +104,23 @@ local function unitHasAura(unit, name)
 	return caster and UnitIsUnit(caster, "player")
 end
 
--- This is slightly confusing. It seems that there are still two penalties, one for using spells below 20 and another for downranking
--- in general, as downranking in general isn't really an issue for now, I'll skip that check and keep the <20 one in until I know for sure
--- that they are both still active.
---local function calculateDownRank(spellName, rank)
---	local level = rank and spellData.level[rank]
---	return level and level < 20 and (1 - ((20 - level) * 0.375)) or 1
---end
+-- Note because I always forget:
+-- Multiplictive modifiers are applied to base heal + spell power after all other calculations
+-- Additive modifiers are applied to the end amount after all calculations
+-- Crit modifiers are applied after all of those calculations
+-- Self modifiers such as MS or Avenging Wrath should be applied after the crit calculations
+local function calculateGeneralAmount(level, amount, spellPower, multiModifier, addModifier)
+	-- Apply downranking penalities for spells below 20
+	if( level < 20 ) then
+		multiModifier = multiModifier * (1 - ((20 - level) * 0.0375))
+	end
+	
+	-- Factor in using a spell beyond the intended level range
+	multiModifier = multiModifier * math.min(1, (level + 11) / UnitLevel("player"))
+	
+	-- Do the general factoring
+	return addModifier * (amount + spellPower * multiModifier)
+end
 
 -- DRUIDS
 -- All data is accurate as of 3.2.0 (build 10192)
@@ -136,13 +146,13 @@ local function loadDruidData()
 
 	-- Regrowth, this will be a bit of an annoying spell to handle once HOT support is added
 	local Regrowth = GetSpellInfo(8936)
-	spellData[Regrowth] = {level = {12, 18, 24, 30, 36, 42, 48, 54, 60, 65, 71, 77}, coeff = 0.2867}
+	spellData[Regrowth] = {12, 18, 24, 30, 36, 42, 48, 54, 60, 65, 71, 77, coeff = 0.2867}
 	-- Heaing Touch
 	local HealingTouch = GetSpellInfo(5185)
-	spellData[HealingTouch] = {level = {1, 8, 14, 20, 26, 32, 38, 44, 50, 56, 60, 62, 69, 74, 79}}
+	spellData[HealingTouch] = {1, 8, 14, 20, 26, 32, 38, 44, 50, 56, 60, 62, 69, 74, 79}
 	-- Nourish
 	local Nourish = GetSpellInfo(50464)
-	spellData[Nourish] = {level = {80}, coeff = 0.358005}
+	spellData[Nourish] = {80, coeff = 0.358005}
 	
 	-- Talent data, these are filled in later and modified on talent changes
 	-- Master Shapeshifter (Multi)
@@ -210,14 +220,15 @@ local function loadDruidData()
 			end
 		end
 		
+		-- Regrowth
 		if( spellName == Regrowth ) then
 			-- Glyph of Regrowth - +20% if target has Regrowth
 			if( glyphCache[54743] and auraData[guid] ) then
 				multiModifier = multiModifier * 1.20
 			end
 			
-			spellPower = spellPower * ((spellData[Regrowth].coeff * 1.88) * (1 + talentData[EmpoweredRejuv].current))
-		
+			spellPower = spellPower * ((spellData[spellName].coeff * 1.88) * (1 + talentData[EmpoweredRejuv].current))
+		-- Nourish
 		elseif( spellName == Nourish ) then
 			-- 46138 - Idol of Flourishing Life, +187 Nourish SP
 			if( currentRelicID == 46138 ) then
@@ -242,8 +253,8 @@ local function loadDruidData()
 				multiModifier = multiModifier * bonus
 			end
 			
-			spellPower = spellPower * ((spellData[Nourish].coeff * 1.88) + talentData[EmpoweredTouch].spent * 0.10)
-
+			spellPower = spellPower * ((spellData[spellName].coeff * 1.88) + talentData[EmpoweredTouch].spent * 0.10)
+		-- Healing Touch
 		elseif( spellName == HealingTouch ) then
 			-- 28568 - Idol of the Avian Heart, 136 base healing to Healing Touch
 			if( currentRelicID == 28568 ) then
@@ -263,14 +274,7 @@ local function loadDruidData()
 			spellPower = spellPower * (((castTime / 3.5) * 1.88) + talentData[EmpoweredTouch].current)
 		end
 
-		-- Note because I always forget:
-		-- Multiplictive modifiers are applied to the spell power after all other calculations
-		-- Additive modifiers are applied to the end amount after all calculations
-		if( spellData[spellName].level[rank] < 20 ) then
-			multiModifier = multiModifier * (1 - ((20 - spellData[spellName].level[rank]) * 0.0375))
-		end
-		
-		healAmount = addModifier * (healAmount + spellPower * multiModifier)
+		healAmount = calculateGeneralAmount(spellData[spellName][rank], healAmount, spellPower, multiModifier, addModifier)
 		
 		-- 100% chance to crit with Nature, this mostly just covers fights like Loatheb where you will basically have 100% crit
 		if( GetSpellCritChance(4) >= 100 ) then
@@ -286,9 +290,9 @@ end
 local function loadPaladinData()
 	-- Spell data
 	local HolyLight = GetSpellInfo(635)
-	spellData[HolyLight] = {level = {1, 6, 14, 22, 30, 38, 46, 54, 60, 62, 70, 75, 80}, coeff = 1.66 / 1.88}
+	spellData[HolyLight] = {1, 6, 14, 22, 30, 38, 46, 54, 60, 62, 70, 75, 80, coeff = 1.66 / 1.88}
 	local FlashofLight = GetSpellInfo(19750)
-	spellData[FlashofLight] = {level = {20, 26, 34, 42, 50, 58, 66, 74, 79}, coeff = 1.009/1.88}
+	spellData[FlashofLight] = {20, 26, 34, 42, 50, 58, 66, 74, 79, coeff = 1.009/1.88}
 	
 	-- Talent data
 	-- Need to figure out a way of supporting +6% healing from imp devo aura, might not be able to
@@ -345,6 +349,7 @@ local function loadPaladinData()
 		addModifier = addModifier + talentData[Divinity].current
 		addModifier = addModifier + talentData[HealingLight].current
 		
+		-- Apply extra spell power based on libram
 		if( currentRelicID ) then
 			if( spellName == HolyLight and holyLibrams[currentRelicID] ) then
 				spellPower = spellPower + holyLibrams[currentRelicID]
@@ -353,16 +358,10 @@ local function loadPaladinData()
 			end
 		end
 		
+		-- Normal calculations
 		spellPower = spellPower * (spellData[spellName].coeff * 1.88)
 		
-		-- Note because I always forget:
-		-- Multiplictive modifiers are applied to the spell power after all other calculations
-		-- Additive modifiers are applied to the end amount after all calculations
-		if( spellData[spellName].level[rank] < 20 ) then
-			multiModifier = multiModifier * (1 - ((20 - spellData[spellName].level[rank]) * 0.0375))
-		end
-		
-		healAmount = addModifier * (healAmount + spellPower * multiModifier)
+		healAmount = calculateGeneralAmount(spellData[spellName][rank], healAmount, spellPower, multiModifier, addModifier)
 
 		-- Divine Favor is 100% chance to crit, so assume they crit, if the user casts Divine Favor and 
 		-- Going to add this in but need to solve a problem: If the player casts favor, casts a spell then "queue casts"
@@ -385,15 +384,19 @@ end
 local function loadPriestData()
 	-- Spell data
 	local GreaterHeal = GetSpellInfo(2060)
-	spellData[GreaterHeal] = {level = {40, 46, 52, 58, 60, 63, 68, 73, 78}, coeff = 3 / 3.5}
+	spellData[GreaterHeal] = {40, 46, 52, 58, 60, 63, 68, 73, 78, coeff = 3 / 3.5}
 	local PrayerofHealing = GetSpellInfo(596)
-	spellData[PrayerofHealing] = {level = {30, 40, 50, 60, 60, 68, 76}, coeff = 0.2798}
+	spellData[PrayerofHealing] = {30, 40, 50, 60, 60, 68, 76, coeff = 0.2798}
 	local FlashHeal = GetSpellInfo(2061)
-	spellData[FlashHeal] = {level = {20, 26, 32, 38, 44, 52, 58, 61, 67, 73, 79}, coeff = 1.5 / 3.5}
+	spellData[FlashHeal] = {20, 26, 32, 38, 44, 52, 58, 61, 67, 73, 79, coeff = 1.5 / 3.5}
 	local BindingHeal = GetSpellInfo(32546)
-	spellData[BindingHeal] = {level = {64, 72, 78}, coeff = 1.5 / 3.5}
+	spellData[BindingHeal] = {64, 72, 78, coeff = 1.5 / 3.5}
 	local Penance = GetSpellInfo(53007)
-	spellData[Penance] = {level = {60, 70, 75, 80}, coeff = 0.857}
+	spellData[Penance] = {60, 70, 75, 80, coeff = 0.857}
+	local Heal = GetSpellInfo(2054)
+	spellData[Heal] = {16, 22, 28, 34, coeff = 3 / 3.5}
+	local LesserHeal = GetSpellInfo(2050)
+	spellData[LesserHeal] = {1, 4, 20}
 	
 	-- Talent data
 	local Grace = GetSpellInfo(47517)
@@ -412,7 +415,6 @@ local function loadPriestData()
 	-- Divine Providence (Add)
 	local DivineProvidence = GetSpellInfo(47567)
 	talentData[DivineProvidence] = {mod = 0.02, current = 0}
-	
 	
 	-- Keep track of who has grace on them
 	local activeGraceGUID, activeGraceModifier
@@ -479,16 +481,16 @@ local function loadPriestData()
 		elseif( spellName == PrayerofHealing ) then
 			addModifier = addModifier + talentData[DivineProvidence].current
 			spellPower = spellPower * (spellData[spellName].coeff * 1.88)
+		-- Heal
+		elseif( spellName == Heal ) then
+			spellPower = spellPower * (spellData[spellName].coeff * 1.88)
+		-- Lesser Heal
+		elseif( spellName == LesserHeal ) then
+			local castTime = rank == 1 and 1.5 or rank == 2 and 2 or 2.5
+			spellPower = spellPower * ((castTime / 3.5) * 1.88)
 		end
 		
-		-- Note because I always forget:
-		-- Multiplictive modifiers are applied to the spell power after all other calculations
-		-- Additive modifiers are applied to the end amount after all calculations
-		if( spellData[spellName].level[rank] < 20 ) then
-			multiModifier = multiModifier * (1 - ((20 - spellData[spellName].level[rank]) * 0.0375))
-		end
-		
-		healAmount = addModifier * (healAmount + spellPower * multiModifier)
+		healAmount = calculateGeneralAmount(spellData[spellName][rank], healAmount, spellPower, multiModifier, addModifier)
 
 		-- Player has over a 95% chance to crit with Holy spells
 		if( GetSpellCritChance(2) >= 100 ) then
