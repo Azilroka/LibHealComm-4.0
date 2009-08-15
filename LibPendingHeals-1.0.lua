@@ -7,7 +7,7 @@ if( not PendHeals ) then return end
 
 -- This needs to be bumped if there is a major change that breaks the comm format
 local COMM_PREFIX = "LPH10"
-local playerGUID
+local playerGUID, playerName
 
 PendHeals.callbacks = PendHeals.callbacks or LibStub:GetLibrary("CallbackHandler-1.0"):New(PendHeals)
 
@@ -954,18 +954,68 @@ function PendHeals:PLAYER_EQUIPMENT_CHANGED()
 	end
 end
 
+-- Comm code
+-- Stolen from Threat-2.0, compresses GUIDs from 18 characters -> 10 and uncompresses them to their original state
+local map = {[254] = "\254\252", [61] = "\254\251", [58] = "\254\250", [255] = "\254\253", [0] = "\255"} 
+local guidCompressHelper = function(x)
+   local a = tonumber(x, 16) 
+   return map[a] or string.char(a)
+end
+
+local dfmt = "0x%02X%02X%02X%02X%02X%02X%02X%02X"
+local function unescape(str)
+   str = string.gsub(str, "\255", "\000")
+   str = string.gsub(str, "\254\253", "\255")
+   str = string.gsub(str, "\254\251", "\061")
+   str = string.gsub(str, "\254\250", "\058")
+   return string.gsub(str, "\254\252", "\254")
+end
+
+local compressGUID = setmetatable({}, {
+	__index = function(self, guid)
+         local cguid = string.match(guid, "0x(.*)")
+         local str  = gsub(cguid, "(%x%x)", guid_compress_helper)
+         self[guid] = str
+         return str
+	end})
+
+local decompressGUID = setmetatable({}, {
+	__index = function(self, str)
+		if( not str ) then return nil end
+		local usc = unescape(str)
+		local guid = string.format(dfmt, string.byte(usc, 1, 8))
+		self[str] = guid
+		return guid
+	end})
+
 -- Spell cast magic
 -- When auto self cast is on, the UNIT_SPELLCAST_SENT event will always come first followed by the funciton calls
 -- Otherwise either SENT comes first then function calls, or some function calls then SENT then more function calls
-local guidPriority, castGUID, castID, mouseoverGUID, hadTargetingCursor, lastGUID
+local castTarget, castID, mouseoverGUID, mouseoverName, hadTargetingCursor, lastSentID
+local castGUIDs, guidPriorities = {}, {}
 
--- Deals with the fact that functions are called differently, priorities are basically:
--- 1 = might be it, 2 = should be it, 3 = definitely it
-local function setCastData(priority, guid)
-	if( not guid or ( guidPriority and guidPriority >= priority ) ) then return end
-		
-	castGUID = guid
-	guidPriority = priority
+-- DEBUG
+local debugGUIDMap = {}
+
+
+local function stripServer(name)
+	return string.gsub(name, "(.-)%-(.*)$", "%1")
+end
+
+-- Deals with the fact that functions are called differently
+-- Why a table when you can only cast one spell at a time you ask? When you factor in lag and mash clicking it's possible to
+-- cast A, interrupt it, cast B and have A fire SUCEEDED before B does, this prevents data from being messed up that way.
+local function setCastData(priority, name, guid)
+	if( not guid or not lastSentID ) then return end
+	if( guidPriorities[lastSentID] and guidPriorities[lastSentID] >= priority ) then return end
+	
+	-- This is meant as a way of locking a cast in because which function has accurate data can be called into question at times, one of them always does though
+	-- this means that as soon as it finds a name match it locks the GUID in until another SENT is fired. Technically it's possible to get a bad GUID but it first requires
+	-- the functions to return different data and it requires the messed up call to be for another name conflict.
+	if( castTarget and castTarget == name ) then priority = 99 end
+	
+	castGUIDs[lastSentID] = guid
+	guidPriorities[lastSentID] = priority
 end
 
 -- When the game tries to figure out the UnitID from the name it will prioritize players over non-players
@@ -974,20 +1024,29 @@ end
 -- This would be another way of getting GUIDs, by keeping a map and marking conflicts due to pets (or vehicles)
 -- we would know that you can't rely on the name exactly and that the other methods are needed. While they seem
 -- to be accurate and not have any issues, it could be a good solution as a better safe than sorry option.
+local castList = {}
 function PendHeals:UNIT_SPELLCAST_SENT(unit, spellName, spellRank, castOn)
 	if( unit ~= "player" or not spellData[spellName] or not averageHeal[spellName .. spellRank] ) then return end
-
+	
+	castTarget = stripServer(castOn)
+	lastSentID = spellName .. spellRank
+	
+	-- DEBUG
+	castList[lastSentID] = stripServer(castOn)
+	
 	-- Self cast is off which means it's possible to have a spell waiting for a target.
 	-- It's possible that it's the mouseover unit, but if we see a *TargetUnit call then we know it's that unit for sure
-	if( not GetCVarBool("autoSelfCast") or hadTargetingCursor ) then
+	if( hadTargetingCursor ) then
 		hadTargetingCursor = nil
 		self.resetFrame:Show()
 		
-		setCastData(1, mouseoverGUID)
+		-- Debug, swap me back to the original method later
+		guidPriorities[lastSentID] = nil
+		setCastData(5, mouseoverName, mouseoverGUID)
+	else
+		guidPriorities[lastSentID] = nil
+		setCastData(0, nil, UnitGUID(castOn))
 	end
-	
-	-- As per above, this is our last ditch effort to get a GUID
-	setCastData(0, UnitGUID(castOn))
 end
 
 --[[
@@ -996,24 +1055,44 @@ end
 [03:07:06] <Arrowmaster> make sure you set __metatable on that table too
 ]]
 
+local timeThrottle
+local function dataFailed(priority, spell, actual, target)
+	if( not timeThrottle or timeThrottle < GetTime() ) then
+		DEFAULT_CHAT_FRAME:AddMessage(string.format("WARNING! LibPendingHeals-1.0 GUID failure for %s. Target was %s (#%d), actual one was %s. Self cast %s, Class %s.", spell or "nil", target or "nil", priority or -1, actual or "nil", GetCVar("autoSelfCast") or "nil", (select(2, UnitClass("player")))))
+		timeThrottle = GetTime() + 300
+	end
+end
+
 function PendHeals:UNIT_SPELLCAST_START(unit, spellName, spellRank, id)
-	if( unit ~= "player" or not spellData[spellName] or not averageHeal[spellName .. spellRank] ) then return end
+	if( unit ~= "player" or not spellData[spellName] or not averageHeal[spellName .. spellRank] ) then
+		return
+	end
+
+	local spellID = spellName .. spellRank
+	local castGUID = castGUIDs[spellID]
+	
+	-- DEBUG
+	local name
+	if( castGUID ) then
+		name = stripServer(debugGUIDMap[castGUID] or UnitName(guidToUnit[castGUID]) or castGUID or "")
+	end
+	
+	if( not castGUID or name ~= castList[spellID] or guidPriorities[spellID] == 0 ) then
+		dataFailed(guidPriorities[spellID], spellName, castList[spellID], name or castGUID)
+	end
 
 	-- CalculateHeaing figures out the actual heal amount
-	local type, amount, ticks = CalculateHealing(castGUID, spellName, spellRank)
+	--local type, amount, ticks = CalculateHealing(castGUID, spellName, spellRank)
 	-- GetHealTargets will figure out who the heal is supposed to land on
-	local targets, amount = GetHealTargets(castGUID, amount, spellName, spellRank)
+	--local targets, amount = GetHealTargets(castGUID, amount, spellName, spellRank)
 	
 	if( amount ) then
-		print(spellName .. " (" .. (spellRank or "") .. ")", type, ticks or 0, amount, targets)
+	--	print(spellName .. " (" .. (spellRank or "") .. ")", type, ticks or 0, amount, targets)
 	else
-		print(spellName .. " (" .. (spellRank or "") .. ")", type, ticks or 0, "<override>", targets)
+	--	print(spellName .. " (" .. (spellRank or "") .. ")", type, ticks or 0, "<override>", targets)
 	end
 	
 	castID = id
-	lastGUID = castGUID
-	castGUID = nil
-	guidPriority = nil
 end
 
 function PendHeals:UNIT_SPELLCAST_CHANNEL_START(...)
@@ -1021,30 +1100,32 @@ function PendHeals:UNIT_SPELLCAST_CHANNEL_START(...)
 end
 
 function PendHeals:UNIT_SPELLCAST_STOP(unit, spellName, spellRank, id)
-	if( unit ~= "player" or id ~= castID ) then return end
+	if( unit ~= "player" or not spellData[spellName] or id ~= castID ) then return end
 	
 	-- Fire a comm message saying the spellcast stopped
-	print("Spell cast done", spellName, spellRank)
+	--print("Spell cast done", spellName, spellRank)
 end
 
 function PendHeals:UNIT_SPELLCAST_INTERRUPTED(unit, spellName, spellRank, id)
-	if( unit ~= "player" or id ~= castID ) then return end
-	
-	castID = nil
+	if( unit ~= "player" or not spellData[spellName] or castID ~= id ) then return end
 	
 	if( ResetChargeData ) then
-		ResetChargeData(lastGUID, spellName, spellRank)
+		ResetChargeData(castGUIDs[spellName .. spellRank], spellName, spellRank)
 	end
 end
 
 function PendHeals:UNIT_SPELLCAST_CHANNEL_STOP(unit, spellName, spellRank)
 	if( unit ~= "player" ) then return end
-	print("Spell cast done", spellName, spellRank)
+	--print("Spell cast done", spellName, spellRank)
 end
 
 -- Need to keep track of mouseover as it can change in the split second after/before casts
 function PendHeals:UPDATE_MOUSEOVER_UNIT()
 	mouseoverGUID = UnitCanAssist("player", "mouseover") and UnitGUID("mouseover")
+	mouseoverName = UnitCanAssist("player", "mouseover") and UnitName("mouseover")
+	
+	-- DEBUG
+	debugGUIDMap[UnitGUID("mouseover")] = UnitName("mouseover")
 end
 
 
@@ -1052,7 +1133,7 @@ end
 -- because the player got a waiting-for-cast icon up and they pressed a key binding to target someone
 function PendHeals:TargetUnit(unit)
 	if( self.resetFrame:IsShown() and UnitCanAssist("player", unit) ) then
-		setCastData(3, UnitGUID(unit))
+		setCastData(6, UnitName(unit), UnitGUID(unit))
 	end
 
 	self.resetFrame:Hide()
@@ -1062,7 +1143,18 @@ end
 -- Works the same as the above except it's called when you have a cursor icon and you click on a secure frame with a target attribute set
 function PendHeals:SpellTargetUnit(unit)
 	if( self.resetFrame:IsShown() and UnitCanAssist("player", unit) ) then
-		setCastData(3, UnitGUID(unit))
+		setCastData(6, UnitName(unit), UnitGUID(unit))
+	end
+	
+	self.resetFrame:Hide()
+	hadTargetingCursor = nil
+end
+
+-- Used in /assist macros
+-- The client should only be able to assist someone if it has data on them, which means the UI has data on them
+function PendHeals:AssistUnit(unit)
+	if( self.resetFrame:IsShown() and UnitCanAssist("player", unit .. "target") ) then
+		setCastData(6, UnitName(unit .. "target"), UnitGUID(unit .. "target"))
 	end
 	
 	self.resetFrame:Hide()
@@ -1073,10 +1165,15 @@ end
 function PendHeals:UseAction(action, unit)
 	-- If the spell is waiting for a target and it's a spell action button then we know that the GUID has to be mouseover or a key binding cast.
 	if( unit and UnitCanAssist("player", unit)  ) then
-		setCastData(3, UnitGUID(unit))
+		setCastData(4, UnitName(unit), UnitGUID(unit))
 	-- No unit, or it's a unit we can't assist 
 	elseif( not SpellIsTargeting() ) then
-		setCastData(2, UnitCanAssist("player", "target") and UnitGUID("target") or playerGUID)
+		if( UnitCanAssist("player", "target") ) then
+			setCastData(4, UnitName("target"), UnitGUID("target"))
+		else
+			setCastData(4, playerName, playerGUID)
+		end
+		
 		hadTargetingCursor = nil
 	else
 		hadTargetingCursor = true
@@ -1085,10 +1182,17 @@ end
 
 -- These are called by hardcoded casts in a button and by the macro system
 function PendHeals:CastSpellByID(spellID, unit)
+	-- If the spell is waiting for a target and it's a spell action button then we know that the GUID has to be mouseover or a key binding cast.
 	if( unit and UnitCanAssist("player", unit)  ) then
-		setCastData(3, UnitGUID(unit))
+		setCastData(4, UnitName(unit), UnitGUID(unit))
+	-- No unit, or it's a unit we can't assist 
 	elseif( not SpellIsTargeting() ) then
-		setCastData(2, UnitCanAssist("player", "target") and UnitGUID("target") or playerGUID)
+		if( UnitCanAssist("player", "target") ) then
+			setCastData(4, UnitName("target"), UnitGUID("target"))
+		else
+			setCastData(4, playerName, playerGUID)
+		end
+		
 		hadTargetingCursor = nil
 	else
 		hadTargetingCursor = true
@@ -1096,10 +1200,17 @@ function PendHeals:CastSpellByID(spellID, unit)
 end
 
 function PendHeals:CastSpellByName(spellName, unit)
-	if( unit and UnitCanAssist("player", unit) ) then
-		setCastData(3, UnitGUID(unit))
+	-- If the spell is waiting for a target and it's a spell action button then we know that the GUID has to be mouseover or a key binding cast.
+	if( unit and UnitCanAssist("player", unit)  ) then
+		setCastData(4, UnitName(unit), UnitGUID(unit))
+	-- No unit, or it's a unit we can't assist 
 	elseif( not SpellIsTargeting() ) then
-		setCastData(2, UnitCanAssist("player", "target") and UnitGUID("target") or playerGUID)
+		if( UnitCanAssist("player", "target") ) then
+			setCastData(4, UnitName("target"), UnitGUID("target"))
+		else
+			setCastData(4, playerName, playerGUID)
+		end
+		
 		hadTargetingCursor = nil
 	else
 		hadTargetingCursor = true
@@ -1133,7 +1244,7 @@ function PendHeals:PARTY_MEMBERS_CHANGED()
 	
 	if( GetNumPartyMembers() == 0 ) then
 		table.wipe(self.guidToUnit)
-		tablew.wipe(self.guidToGroup)
+		table.wipe(self.guidToGroup)
 		
 		self.guidToUnit[playerGUID] = "player"
 
@@ -1143,7 +1254,7 @@ function PendHeals:PARTY_MEMBERS_CHANGED()
 	end
 	
 	-- Because parties do not have "real" groups, we will simply pretend they are all in group 0
-	self.guidtoGroup[playerGUID] = 0
+	self.guidToGroup[playerGUID] = 0
 	
 	for i=1, MAX_PARTY_MEMBERS do
 		local unit = "party" .. i
@@ -1229,6 +1340,10 @@ function PendHeals:OnInitialize()
 
 	-- Oddly enough player GUID is not available on file load, so keep the map of player GUID to themselves too
 	playerGUID = UnitGUID("player")
+	playerName = UnitName("player")
+	
+	debugGUIDMap[playerGUID] = playerName
+	
 	self.guidToUnit[playerGUID] = "player"
 	
 	-- Figure out the initial relic
@@ -1256,27 +1371,26 @@ function PendHeals:OnInitialize()
 	-- You can't unhook secure hooks after they are done, so will hook once and the PendHeals table will update with the latest functions
 	-- automagically. If a new function is ever used it'll need a specific variable to indicate those set of hooks.
 	hooksecurefunc("TargetUnit", function(...)
-		--print(GetTime(), "TargetUnit", UnitExists("mouseover"), ...)
 		PendHeals:TargetUnit(...)
 	end)
 
 	hooksecurefunc("SpellTargetUnit", function(...)
-		--print(GetTime(), "SpellTargetUnit", UnitExists("mouseover"), ...)
 		PendHeals:SpellTargetUnit(...)
 	end)
 
+	hooksecurefunc("AssistUnit", function(...)
+		PendHeals:AssistUnit(...)
+	end)
+
 	hooksecurefunc("UseAction", function(...)
-		--print(GetTime(), "UseAction", UnitExists("mouseover"), ...)
 		PendHeals:UseAction(...)
 	end)
 
 	hooksecurefunc("CastSpellByID", function(...)
-		--print(GetTime(), "CastSPellByID", UnitExists("mouseover"), ...)
 		PendHeals:CastSpellByID(...)
 	end)
 
 	hooksecurefunc("CastSpellByName", function(...)
-		--print(GetTime(), "CastSpellByName", UnitExists("mouseover"), ...)
 		PendHeals:CastSpellByName(...)
 	end)
 end
