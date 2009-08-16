@@ -758,6 +758,9 @@ local healingModifiers, longAuras = PendHeals.healingModifiers, PendHeals.longAu
 local currentModifiers = PendHeals.currentModifiers
 local distribution, instanceType
 
+-- DEBUG
+local debugGUIDMap = {}
+
 local function sendMessage(msg)
 	SendAddonMessage(COMM_PREFIX, msg, distribution)
 end
@@ -767,6 +770,9 @@ function PendHeals:ZONE_CHANGED_NEW_AREA()
 	local type = select(2, IsInInstance())
 	if( type ~= instanceType ) then
 		distribution = ( type == "pvp" or type == "arena" ) and "BATTLEGROUND" or "RAID"
+		
+		-- DEBUG
+		table.wipe(debugGUIDMap)
 			
 		-- Changes the value of Necrotic Poison based on zone type, if there are more difficulty type MS's I'll support those too
 		-- Heroic = 90%, Non-Heroic = 75%
@@ -991,12 +997,9 @@ local decompressGUID = setmetatable({}, {
 -- Spell cast magic
 -- When auto self cast is on, the UNIT_SPELLCAST_SENT event will always come first followed by the funciton calls
 -- Otherwise either SENT comes first then function calls, or some function calls then SENT then more function calls
-local castTarget, castID, mouseoverGUID, mouseoverName, hadTargetingCursor, lastSentID
+local castTarget, castID, mouseoverGUID, mouseoverName, hadTargetingCursor, lastSentID, lastTargetGUID, lastTargetName
+local lastFriendlyGUID, lastFriendlyName, lastGUID, lastName, lastIsFriend
 local castGUIDs, guidPriorities = {}, {}
-
--- DEBUG
-local debugGUIDMap = {}
-
 
 local function stripServer(name)
 	return string.gsub(name, "(.-)%-(.*)$", "%1")
@@ -1128,27 +1131,42 @@ function PendHeals:UPDATE_MOUSEOVER_UNIT()
 	debugGUIDMap[UnitGUID("mouseover")] = UnitName("mouseover")
 end
 
+-- Keep track of our last target/friendly target for the sake of /targetlast and /targetlastfriend
+function PendHeals:PLAYER_TARGET_CHANGED()
+	if( lastGUID and lastName ) then
+		if( lastIsFriend ) then
+			lastFriendlyGUID, lastFriendlyName = lastGUID, lastName
+		end
+		
+		lastTargetGUID, lastTargetName = lastGUID, lastName
+	end
+	
+	-- Despite the fact that it's called target last friend, UnitIsFriend won't actually work
+	lastGUID = UnitGUID("target")
+	lastName = UnitName("target")
+	lastIsFriend = UnitCanAssist("player", "target")
+	
+	if( lastGUID ) then
+		debugGUIDMap[lastGUID] = lastName
+	end
+end
+
+-- Unit was targeted through a function
+function PendHeals:Target(unit)
+	if( self.resetFrame:IsShown() and UnitCanAssist("player", unit) ) then
+		setCastData(6, UnitName(unit), UnitGUID(unit))
+	end
+
+	self.resetFrame:Hide()
+	hadTargetingCursor = nil
+end
 
 -- This is only needed when auto self cast is off, in which case this is called right after UNIT_SPELLCAST_SENT
 -- because the player got a waiting-for-cast icon up and they pressed a key binding to target someone
-function PendHeals:TargetUnit(unit)
-	if( self.resetFrame:IsShown() and UnitCanAssist("player", unit) ) then
-		setCastData(6, UnitName(unit), UnitGUID(unit))
-	end
-
-	self.resetFrame:Hide()
-	hadTargetingCursor = nil
-end
+PendHeals.TargetUnit = PendHeals.Target
 
 -- Works the same as the above except it's called when you have a cursor icon and you click on a secure frame with a target attribute set
-function PendHeals:SpellTargetUnit(unit)
-	if( self.resetFrame:IsShown() and UnitCanAssist("player", unit) ) then
-		setCastData(6, UnitName(unit), UnitGUID(unit))
-	end
-	
-	self.resetFrame:Hide()
-	hadTargetingCursor = nil
-end
+PendHeals.SpellTargetUnit = PendHeals.Target
 
 -- Used in /assist macros
 -- The client should only be able to assist someone if it has data on them, which means the UI has data on them
@@ -1161,8 +1179,27 @@ function PendHeals:AssistUnit(unit)
 	hadTargetingCursor = nil
 end
 
--- Called whenever an action button is clicked, this is generally the last of a function chain, CastSpellBy* is called first.
-function PendHeals:UseAction(action, unit)
+-- Target last was used, the only reason this is called with reset frame being shown is we're casting on a valid unit
+-- don't have to worry about the GUID no longer being invalid etc
+function PendHeals:TargetLast(guid, name)
+	if( name and guid and self.resetFrame:IsShown() ) then
+		setCastData(5, name, guid) 
+	end
+	
+	self.resetFrame:Hide()
+	hadTargetingCursor = nil
+end
+
+function PendHeals:TargetLastFriend()
+	self:TargetLast(lastFriendlyGUID, lastFriendlyName)
+end
+
+function PendHeals:TargetLastTarget()
+	self:TargetLast(lastTargetGUID, lastTargetName)
+end
+
+-- Spell was cast somehow
+function PendHeals:CastSpell(arg, unit)
 	-- If the spell is waiting for a target and it's a spell action button then we know that the GUID has to be mouseover or a key binding cast.
 	if( unit and UnitCanAssist("player", unit)  ) then
 		setCastData(4, UnitName(unit), UnitGUID(unit))
@@ -1180,42 +1217,9 @@ function PendHeals:UseAction(action, unit)
 	end
 end
 
--- These are called by hardcoded casts in a button and by the macro system
-function PendHeals:CastSpellByID(spellID, unit)
-	-- If the spell is waiting for a target and it's a spell action button then we know that the GUID has to be mouseover or a key binding cast.
-	if( unit and UnitCanAssist("player", unit)  ) then
-		setCastData(4, UnitName(unit), UnitGUID(unit))
-	-- No unit, or it's a unit we can't assist 
-	elseif( not SpellIsTargeting() ) then
-		if( UnitCanAssist("player", "target") ) then
-			setCastData(4, UnitName("target"), UnitGUID("target"))
-		else
-			setCastData(4, playerName, playerGUID)
-		end
-		
-		hadTargetingCursor = nil
-	else
-		hadTargetingCursor = true
-	end
-end
-
-function PendHeals:CastSpellByName(spellName, unit)
-	-- If the spell is waiting for a target and it's a spell action button then we know that the GUID has to be mouseover or a key binding cast.
-	if( unit and UnitCanAssist("player", unit)  ) then
-		setCastData(4, UnitName(unit), UnitGUID(unit))
-	-- No unit, or it's a unit we can't assist 
-	elseif( not SpellIsTargeting() ) then
-		if( UnitCanAssist("player", "target") ) then
-			setCastData(4, UnitName("target"), UnitGUID("target"))
-		else
-			setCastData(4, playerName, playerGUID)
-		end
-		
-		hadTargetingCursor = nil
-	else
-		hadTargetingCursor = true
-	end
-end
+PendHeals.CastSpellByName = PendHeals.CastSpell
+PendHeals.CastSpellByID = PendHeals.CastSpell
+PendHeals.UseAction = PendHeals.CastSpell
 
 -- Make sure we don't have invalid units in this
 local function sanityCheckMapping()
@@ -1370,29 +1374,16 @@ function PendHeals:OnInitialize()
 	
 	-- You can't unhook secure hooks after they are done, so will hook once and the PendHeals table will update with the latest functions
 	-- automagically. If a new function is ever used it'll need a specific variable to indicate those set of hooks.
-	hooksecurefunc("TargetUnit", function(...)
-		PendHeals:TargetUnit(...)
-	end)
-
-	hooksecurefunc("SpellTargetUnit", function(...)
-		PendHeals:SpellTargetUnit(...)
-	end)
-
-	hooksecurefunc("AssistUnit", function(...)
-		PendHeals:AssistUnit(...)
-	end)
-
-	hooksecurefunc("UseAction", function(...)
-		PendHeals:UseAction(...)
-	end)
-
-	hooksecurefunc("CastSpellByID", function(...)
-		PendHeals:CastSpellByID(...)
-	end)
-
-	hooksecurefunc("CastSpellByName", function(...)
-		PendHeals:CastSpellByName(...)
-	end)
+	-- By default most of these are mapped to a more generic function, but I call separate ones so I don't have to rehook
+	-- if it turns out I need to know something specific
+	hooksecurefunc("TargetUnit", function(...) PendHeals:TargetUnit(...) end)
+	hooksecurefunc("SpellTargetUnit", function(...) PendHeals:SpellTargetUnit(...) end)
+	hooksecurefunc("AssistUnit", function(...) PendHeals:AssistUnit(...) end)
+	hooksecurefunc("UseAction", function(...) PendHeals:UseAction(...) end)
+	hooksecurefunc("CastSpellByID", function(...) PendHeals:CastSpellByID(...) end)
+	hooksecurefunc("CastSpellByName", function(...) PendHeals:CastSpellByName(...) end)
+	hooksecurefunc("TargetLastFriend", function(...) PendHeals:TargetLastFriend(...) end)
+	hooksecurefunc("TargetLastTarget", function(...) PendHeals:TargetLastTarget(...) end)
 end
 
 -- General event handler
@@ -1431,6 +1422,7 @@ PendHeals.frame:RegisterEvent("GLYPH_ADDED")
 PendHeals.frame:RegisterEvent("GLYPH_REMOVED")
 PendHeals.frame:RegisterEvent("GLYPH_UPDATED")
 PendHeals.frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+PendHeals.frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 PendHeals.frame:RegisterEvent("RAID_ROSTER_UPDATE")
 PendHeals.frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 PendHeals.frame:RegisterEvent("UNIT_PET")
