@@ -15,6 +15,7 @@ PendHeals.glyphCache = PendHeals.glyphCache or {}
 PendHeals.playerModifiers = PendHeals.playerModifiers or {}
 PendHeals.guidToGroup = PendHeals.guidToGroup or {}
 PendHeals.guidToUnit = PendHeals.guidToUnit or {}
+PendHeals.spellData = PendHeals.spellData or {}
 
 -- Validation for passed arguments
 if( not PendHeals.tooltip ) then
@@ -66,6 +67,13 @@ if( not PendHeals.averageHeal ) then
 							minHeal, maxHeal = min, max
 						end
 						
+						-- Some spells like Tranquility or hots in general don't have a range on them, match the first number it finds
+						-- (and pray)
+						if( not minHeal and not maxHeal and PendHeals.spellData[spellName].noRange ) then
+							local heal = string.match(text:GetText(), "(%d+)")
+							minHeal, maxHeal = heal, heal
+						end
+						
 						minHeal = tonumber(minHeal)
 						maxHeal = tonumber(maxHeal)
 						
@@ -79,6 +87,8 @@ if( not PendHeals.averageHeal ) then
 							return tbl[index]
 						end
 					end
+					
+					break
 				end
 			end
 			
@@ -98,7 +108,7 @@ end
 local playerModifiers, averageHeal, rankNumbers, glyphCache = PendHeals.playerModifiers, PendHeals.averageHeal, PendHeals.rankNumbers, PendHeals.glyphCache
 local guidToUnit, guidToGroup = PendHeals.guidToUnit, PendHeals.guidToGroup
 local currentRelicID, CalculateHealing, GetHealTargets, AuraHandler, ResetChargeData
-local spellData, talentData, equippedSetPieces, itemSetsData, baseHealingRelics = {}, {}, {}, {}
+local spellData, talentData, equippedSetPieces, itemSetsData, baseHealingRelics = PendHeals.spellData, {}, {}, {}
 local playerHealModifier = 1
 
 -- UnitBuff priortizes our buffs over everyone elses when there is a name conflict, so yay for that
@@ -111,6 +121,7 @@ end
 -- Note because I always forget:
 -- Multiplictive modifiers are applied to base heal + spell power after all other calculations
 -- Additive modifiers are applied to the end amount after all calculations
+-- Penalty modifiers are applied directly to the spell power
 -- Crit modifiers are applied after all of those calculations
 -- Self modifiers such as MS or Avenging Wrath should be applied after the crit calculations
 local function calculateGeneralAmount(level, amount, spellPower, multiModifier, addModifier)
@@ -124,7 +135,8 @@ local function calculateGeneralAmount(level, amount, spellPower, multiModifier, 
 	penalty = penalty * math.min(1, math.max(0, 1 - (UnitLevel("player") - level - 11) * 0.05))
 				
 	-- Do the general factoring
-	return addModifier * amount + ((spellPower * penalty) * multiModifier)
+	spellPower = spellPower * penalty
+	return addModifier * (amount + (spellPower * multiModifier))
 end
 
 --[[
@@ -152,7 +164,7 @@ end
 ]]
 	
 -- DRUIDS
--- All data is accurate as of 3.2.0 (build 10192)
+-- All data is accurate as of 3.2.2 (build 10257)
 local function loadDruidData()
 	-- Spell data
 	local Rejuvenation = GetSpellInfo(774)
@@ -161,9 +173,6 @@ local function loadDruidData()
 	local TreeofLife = GetSpellInfo(5420)
 
 	--[[
-	-- Tranquility, have to decide how to handle this. It should likely be considered a hot instead of a "heal" every X seconds
-	local Tranquility = GetSpellInfo(740)
-	spellData[Tranquility] = {level = {30, 40, 50, 60, 70, 75, 80}, type = "hot"},
 	-- Rejuvenation
 	spellData[Rejuvenation] = {level = {4, 10, 16, 22, 28, 34, 40, 46, 52, 58, 60, 63, 69, 75, 80}, type = "hot"}
 	-- Lifebloom, another fun spell. How do you consider the bloom, would that be considered a normal heal at the end? Maybe
@@ -182,6 +191,9 @@ local function loadDruidData()
 	-- Nourish
 	local Nourish = GetSpellInfo(50464)
 	spellData[Nourish] = {80, coeff = 0.358005}
+	-- Tranquility
+	local Tranquility = GetSpellInfo(740)
+	spellData[Tranquility] = {30, 40, 50, 60, 70, 75, 80, coeff = 1.144681, noRange = true, ticks = 4}
 	
 	-- Talent data, these are filled in later and modified on talent changes
 	-- Master Shapeshifter (Multi)
@@ -196,6 +208,9 @@ local function loadDruidData()
 	-- Empowered Rejuvenation (Multi, this ups both the direct heal and the hot)
 	local EmpoweredRejuv = GetSpellInfo(33886)
 	talentData[EmpoweredRejuv] = {mod = 0.04, current = 0}
+	-- Genesis (Add)
+	local Genesis = GetSpellInfo(57810)
+	talentData[Genesis] = {mod = 0.01, current = 0}
 	
 	--[[
 		Idols
@@ -229,6 +244,20 @@ local function loadDruidData()
 	end
 
 	GetHealTargets = function(guid, healAmount, spellName, spellRank)
+		-- Tranquility pulses on everyone within 30 yards, if they are in range of Innervate they'll get Tranquility
+		if( spellName == Tranquility ) then
+			local list = guid
+			
+			local group = guidToGroup[guid]
+			for guid, id in pairs(guidToGroup) do
+				if( IsSpellInRange(Innervate, guidToUnit[guid]) == 1 ) then
+					list = list .. "," .. guid
+				end
+			end
+			
+			return list, healAmount
+		end
+		
 		return guid, healAmount
 	end
 	
@@ -239,7 +268,7 @@ local function loadDruidData()
 		local rank = PendHeals.rankNumbers[spellRank]
 		
 		-- Gift of Nature
-		addModifier = 1.0 + talentData[GiftofNature].current
+		multiModifier = multiModifier * (1 + talentData[GiftofNature].current)
 		
 		-- Master Shapeshifter does not apply directly when using Lifebloom
 		if( unitHasAura("player", TreeofLife) ) then
@@ -295,13 +324,24 @@ local function loadDruidData()
 			-- Rank 1 - 3: 1.5/2/2.5 cast time, Rank 4+: 3 cast time
 			local castTime = rank > 3 and 3 or rank == 3 and 2.5 or rank == 2 and 2 or rank == 1 and 1.5
 			spellPower = spellPower * (((castTime / 3.5) * 1.88) + talentData[EmpoweredTouch].current)
+		-- Tranquility
+		elseif( spellName == Tranquility ) then
+			addModifier = addModifier + talentData[Genesis].current
+			multiModifier = multiModifier + talentData[Genesis].current
+			
+			spellPower = spellPower * ((spellData[spellName].coeff * 1.88) * (1 + talentData[EmpoweredRejuv].current))
+			spellPower = spellPower / spellData[spellName].ticks
 		end
-
+		
 		healAmount = calculateGeneralAmount(spellData[spellName][rank], healAmount, spellPower, multiModifier, addModifier)
 		
 		-- 100% chance to crit with Nature, this mostly just covers fights like Loatheb where you will basically have 100% crit
 		if( GetSpellCritChance(4) >= 100 ) then
 			healAmount = healAmount * 1.50
+		end
+		
+		if( spellData[spellName].ticks ) then
+			return "channel", math.ceil(healAmount * playerHealModifier), spellData[spellName].ticks
 		end
 		
 		return "heal", math.ceil(healAmount * playerHealModifier)
@@ -315,7 +355,7 @@ local function loadPaladinData()
 	local HolyLight = GetSpellInfo(635)
 	spellData[HolyLight] = {1, 6, 14, 22, 30, 38, 46, 54, 60, 62, 70, 75, 80, coeff = 1.66 / 1.88}
 	local FlashofLight = GetSpellInfo(19750)
-	spellData[FlashofLight] = {20, 26, 34, 42, 50, 58, 66, 74, 79, coeff = 1.009/1.88}
+	spellData[FlashofLight] = {20, 26, 34, 42, 50, 58, 66, 74, 79, coeff = 1.009 / 1.88}
 	
 	-- Talent data
 	-- Need to figure out a way of supporting +6% healing from imp devo aura, might not be able to
@@ -332,8 +372,6 @@ local function loadPaladinData()
 	-- Seal of Light + Glyph = 5% healing
 	local SealofLight = GetSpellInfo(20165)
 	
-	local favorThrottle = 0
-
 	-- Am I slightly crazy for adding level <40 glyphs? Yes!
 	local flashLibrams = {[42615] = 375, [42614] = 331, [42613] = 293, [42612] = 204, [25644] = 79, [23006] = 43, [23201] = 28}
 	local holyLibrams = {[45436] = 160, [40268] = 141, [28296] = 47}
@@ -379,7 +417,9 @@ local function loadPaladinData()
 		end
 		
 		addModifier = addModifier + talentData[Divinity].current
-		addModifier = addModifier + talentData[HealingLight].current
+		multiModifier = multiModifier * (1 + talentData[Divinity].current)
+		
+		multiModifier = multiModifier * (1 + talentData[HealingLight].current)
 		
 		-- Apply extra spell power based on libram
 		if( currentRelicID ) then
@@ -409,8 +449,7 @@ local function loadPaladinData()
 end
 
 -- PRIESTS
--- Penance is off, I think there's an issue with the coeffiency that I need to look into
--- All other spells are accurate as of 3.2.2 (build 10257)
+-- Accurate as of 3.2.2 (build 10257)
 local function loadPriestData()
 	-- Spell data
 	local GreaterHeal = GetSpellInfo(2060)
@@ -422,7 +461,7 @@ local function loadPriestData()
 	local BindingHeal = GetSpellInfo(32546)
 	spellData[BindingHeal] = {64, 72, 78, coeff = 1.5 / 3.5}
 	local Penance = GetSpellInfo(53007)
-	spellData[Penance] = {60, 70, 75, 80, coeff = 2 / 3.5}
+	spellData[Penance] = {60, 70, 75, 80, coeff = 0.857, ticks = 3}
 	local Heal = GetSpellInfo(2054)
 	spellData[Heal] = {16, 22, 28, 34, coeff = 3 / 3.5}
 	local LesserHeal = GetSpellInfo(2050)
@@ -491,27 +530,23 @@ local function loadPriestData()
 		end
 		
 		addModifier = addModifier + talentData[FocusedPower].current
-		multiModifier = multiModifier * (1 + talentData[FocusedPower].current)
-
 		addModifier = addModifier + talentData[BlessedResilience].current
-		multiModifier = multiModifier * (1 + talentData[BlessedResilience].current)
-
 		multiModifier = multiModifier * (1 + talentData[SpiritualHealing].current)
 		
 		-- Greater Heal
 		if( spellName == GreaterHeal ) then
-			local coeff = ((spellData[spellName].coeff * 1.88) + talentData[EmpoweredHealing].current)
-			spellPower = spellPower * coeff
+			spellPower = spellPower * ((spellData[spellName].coeff * 1.88) * (1 + talentData[EmpoweredHealing].current))
 		-- Flash Heal
 		elseif( spellName == FlashHeal ) then
-			spellPower = spellPower * ((spellData[spellName].coeff * 1.88) + talentData[EmpoweredHealing].spent * 0.04)
+			spellPower = spellPower * ((spellData[spellName].coeff * 1.88) * (1 + talentData[EmpoweredHealing].spent * 0.04))
 		-- Binding Heal
 		elseif( spellName == BindingHeal ) then
-			addModifier = addModifier + talentData[DivineProvidence].current
-			spellPower = spellPower * ((spellData[spellName].coeff * 1.88) + talentData[EmpoweredHealing].spent * 0.04)
+			multiModifier = multiModifier * (1 + talentData[DivineProvidence].current)
+			spellPower = spellPower * ((spellData[spellName].coeff * 1.88) * (1 + talentData[EmpoweredHealing].spent * 0.04))
 		-- Penance
 		elseif( spellName == Penance ) then
 			spellPower = spellPower * (spellData[spellName].coeff * 1.88)
+			spellPower = spellPower / spellData[spellName].ticks
 		-- Prayer of Heaing
 		elseif( spellName == PrayerofHealing ) then
 			multiModifier = multiModifier * (1 + talentData[DivineProvidence].current)
@@ -524,10 +559,10 @@ local function loadPriestData()
 			local castTime = rank > 3 and 2.5 or rank == 2 and 2 or 1.5
 			spellPower = spellPower * ((castTime / 3.5) * 1.88)
 		end
-				
+		
 		healAmount = calculateGeneralAmount(spellData[spellName][rank], healAmount, spellPower, multiModifier, addModifier)
 
-		-- Player has over a 95% chance to crit with Holy spells
+		-- Player has over a 100% chance to crit with Holy spells
 		if( GetSpellCritChance(2) >= 100 ) then
 			healAmount = healAmount * 1.50
 		end
@@ -535,10 +570,10 @@ local function loadPriestData()
 		-- Apply the final modifier of any MS or self heal increasing effects
 		healAmount = math.ceil(healAmount * playerHealModifier)
 		
-		-- As Penance doesn't actually heal for it's amount instantly, send it as a pulse heal
+		-- As Penance doesn't actually heal for it's amount instantly, send it as a channel heal
 		-- even thought Penance ticks 3 times, the first one is instant and will heal before the comm message gets there, so pretend it's two heals
 		if( spellName == Penance ) then
-			return "pulse", healAmount, 2
+			return "channel", healAmount, 2
 		end
 				
 		return "heal", healAmount
@@ -547,7 +582,7 @@ end
 
 -- SHAMANS
 -- All spells accurate as of 3.2.2 (build 10257)
--- For some reason I have to apply Purification as both an add and multi modifier to get accurate results, not sure why.
+-- Chain Heal with Riptide is about ~300 off though, everything else is spot on.
 local function loadShamanData()
 	-- Spell data
 	local ChainHeal = GetSpellInfo(1064)
@@ -615,7 +650,6 @@ local function loadShamanData()
 		local spellPower = GetSpellBonusHealing()
 		local multiModifier, addModifier = 1, 1
 		
-		multiModifier = multiModifier * (1 + talentData[Purification].current)
 		addModifier = addModifier + talentData[Purification].current
 		
 		-- Chain Heal
@@ -628,14 +662,14 @@ local function loadShamanData()
 
 			-- Add +25% from Riptide being up and reset the flag
 			if( riptideData[guid] ) then
-				addModifier = addModifier + 0.25
+				multiModifier = multiModifier * 1.25
 				riptideData[guid] = nil
 			end
 			
 			spellPower = spellPower * (spellData[spellName].coeff * 1.88)
 		-- Heaing Wave
 		elseif( spellName == HealingWave ) then
-			multiModifier = multiModifier * (talentData[HealingWay].spent == 3 and 1.25 or talentData[HealingWay].spent == 2 and 1.16 or 1.08)
+			multiModifier = multiModifier * (talentData[HealingWay].spent == 3 and 1.25 or talentData[HealingWay].spent == 2 and 1.16 or talentData[HealingWay].spent == 1 and 1.08 or 1)
 			
 			--/dump 1.10 * 4062.5 + ((2178 * 1.8114) * 1) * 1.375
 			if( equippedSetPieces["T7 Resto"] >= 4 ) then
@@ -667,7 +701,7 @@ local function loadShamanData()
 		
 		healAmount = calculateGeneralAmount(spellData[spellName][rank], healAmount, spellPower, multiModifier, addModifier)
 
-		-- Player has over a 95% chance to crit with Nature spells
+		-- Player has over a 100% chance to crit with Nature spells
 		if( GetSpellCritChance(4) >= 100 ) then
 			healAmount = healAmount * 1.50
 		end
@@ -873,7 +907,7 @@ function PendHeals:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID,
 			playerModifiers[spellID] = selfModifiers[spellID]
 			recalculatePlayerModifiers()
 		end
-		
+				
 	elseif( eventType == "SPELL_AURA_REMOVED" ) then
 		local spellID, spellName, spellSchool, auraType = ...
 		if( playerModifiers[spellID] ) then
@@ -1085,14 +1119,14 @@ function PendHeals:UNIT_SPELLCAST_START(unit, spellName, spellRank, id)
 	end
 
 	-- CalculateHeaing figures out the actual heal amount
-	--local type, amount, ticks = CalculateHealing(castGUID, spellName, spellRank)
+	local type, amount, ticks = CalculateHealing(castGUID, spellName, spellRank)
 	-- GetHealTargets will figure out who the heal is supposed to land on
-	--local targets, amount = GetHealTargets(castGUID, amount, spellName, spellRank)
+	local targets, amount = GetHealTargets(castGUID, amount, spellName, spellRank)
 	
 	if( amount ) then
-	--	print(spellName .. " (" .. (spellRank or "") .. ")", type, ticks or 0, amount, targets)
+		print(spellName .. " (" .. (spellRank or "") .. ")", type, ticks or 0, amount, targets)
 	else
-	--	print(spellName .. " (" .. (spellRank or "") .. ")", type, ticks or 0, "<override>", targets)
+		print(spellName .. " (" .. (spellRank or "") .. ")", type, ticks or 0, "<override>", targets)
 	end
 	
 	castID = id
