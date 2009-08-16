@@ -16,7 +16,43 @@ PendHeals.playerModifiers = PendHeals.playerModifiers or {}
 PendHeals.guidToGroup = PendHeals.guidToGroup or {}
 PendHeals.guidToUnit = PendHeals.guidToUnit or {}
 PendHeals.spellData = PendHeals.spellData or {}
+PendHeals.spellToID = PendHeals.spellToID or {}
+PendHeals.pendingHeals = PendHeals.pendingHeals or {}
 
+-- Stolen from Threat-2.0, compresses GUIDs from 18 characters -> 10 and uncompresses them to their original state
+local map = {[254] = "\254\252", [61] = "\254\251", [58] = "\254\250", [255] = "\254\253", [0] = "\255"} 
+local guidCompressHelper = function(x)
+   local a = tonumber(x, 16) 
+   return map[a] or string.char(a)
+end
+
+local dfmt = "0x%02X%02X%02X%02X%02X%02X%02X%02X"
+local function unescape(str)
+   str = string.gsub(str, "\255", "\000")
+   str = string.gsub(str, "\254\253", "\255")
+   str = string.gsub(str, "\254\251", "\061")
+   str = string.gsub(str, "\254\250", "\058")
+   return string.gsub(str, "\254\252", "\254")
+end
+
+local compressGUID = setmetatable({}, {
+	__index = function(self, guid)
+         local cguid = string.match(guid, "0x(.*)")
+         local str = string.gsub(cguid, "(%x%x)", guidCompressHelper)
+         self[guid] = str
+         return str
+end})
+
+local decompressGUID = setmetatable({}, {
+	__index = function(self, str)
+		if( not str ) then return nil end
+		local usc = unescape(str)
+		local guid = string.format(dfmt, string.byte(usc, 1, 8))
+		self[str] = guid
+		return guid
+end})
+
+	
 -- Validation for passed arguments
 if( not PendHeals.tooltip ) then
 	local tooltip = CreateFrame("GameTooltip")
@@ -78,8 +114,10 @@ if( not PendHeals.averageHeal ) then
 						maxHeal = tonumber(maxHeal)
 						
 						if( minHeal and maxHeal ) then
+							-- Already scanning the tooltip, might as well pull the spellID for comm too
+							PendHeals.spellToID[name] = select(3, PendHeals.tooltip:GetSpell())
+
 							local average = (minHeal + maxHeal) / 2
-							
 							tbl[index] = average
 							return tbl[index]
 						else
@@ -99,9 +137,26 @@ if( not PendHeals.averageHeal ) then
 end
 
 -- APIs
-function PendHeals:GetModifier(guid)
+function PendHeals:GetHealModifier(guid)
 	return PendHeals.currentModifiers[guid] or 1
 end
+
+--[[
+- PendingHeals:GetGuidUnitMapTable
+Returns a protected table that can't be modified, but returns a list of GUID -> Units.
+
+- PendingHeals:GetCasterTable()
+Returns a protected table that can't be modified, but can be used if you want to get a list of who currently has an active heal. If you use it with the GUID -> Unit map you can do things like pull all Druids using LibPendingHeals-1.0 without having to save your own mappings.
+
+- PendingHeals:GetHealModifier(guid)
+Gets the healing modifier for the GUID, defaults to 1 if no modifier was found.
+
+- PendingHeals:GetHealAmount(guid, bitType[, time[, casterGUID])
+bitType will be a bit field for what kind of combination of heals to get, it will have constants and such as well in case something changes later on.
+
+Gets all pending heals of the passed type (all if nil) within the period of time (if passed) and matches the casterGUID (if true), returns nil if no heals are found.
+Returns the total healing using the passed filters within the time period, or overall if no time is passed. For example, if there is a Greater Heal coming in 2 seconds for 5,000, a Rejuvenation coming in for 2,000 in 1s and 2,000s in 4s then looking at the healing incoming in the next 2s will give you 7,000.]]
+
 
 -- Healing class data
 -- Thanks to Gagorian (DrDamage) for letting me steal his formulas and such
@@ -161,6 +216,8 @@ end
 	GetHealTargets: Who this heal is going to hit, used for setting which targes to hit for Heal of Light, can also be used
 	as an override for things like Glyph of Healing Wave which is a 100% heal on target and 20% heal on yourself
 	when the 2nd return is amount, it will use that amount for all targets otherwise it will use whatever is passed for each GUID
+	
+	**NOTE** Any GUID returned from GetHealTargets must be compressed through a call to compressGUID[guid]
 ]]
 	
 -- DRUIDS
@@ -171,7 +228,8 @@ local function loadDruidData()
 	local Lifebloom = GetSpellInfo(33763)
 	local WildGrowth = GetSpellInfo(48438)
 	local TreeofLife = GetSpellInfo(5420)
-
+	local Innervate = GetSpellInfo(29166)
+	
 	--[[
 	-- Rejuvenation
 	spellData[Rejuvenation] = {level = {4, 10, 16, 22, 28, 34, 40, 46, 52, 58, 60, 63, 69, 75, 80}, type = "hot"}
@@ -246,19 +304,19 @@ local function loadDruidData()
 	GetHealTargets = function(guid, healAmount, spellName, spellRank)
 		-- Tranquility pulses on everyone within 30 yards, if they are in range of Innervate they'll get Tranquility
 		if( spellName == Tranquility ) then
-			local list = guid
+			local list = compressGUID[guid]
 			
 			local group = guidToGroup[guid]
-			for guid, id in pairs(guidToGroup) do
-				if( IsSpellInRange(Innervate, guidToUnit[guid]) == 1 ) then
-					list = list .. "," .. guid
+			for groupGUID, id in pairs(guidToGroup) do
+				if( guid ~= groupGUID and IsSpellInRange(Innervate, guidToUnit[groupGUID]) == 1 ) then
+					list = list .. "," .. compressGUID[groupGUID]
 				end
 			end
 			
 			return list, healAmount
 		end
 		
-		return guid, healAmount
+		return compressGUID[guid], healAmount
 	end
 	
 	CalculateHealing = function(guid, spellName, spellRank)
@@ -397,11 +455,11 @@ local function loadPaladinData()
 
 	-- Check for beacon when figuring out who to heal
 	GetHealTargets = function(guid, healAmount, spellName, spellRank)
-		if( activeBeaconGUID and activeBeaconGUID ~= guid and guidToUnit[activeBeaconGUID] and UnitExists(guidToUnit[activeBeaconGUID]) ) then
-			return string.format("%s,%s", guid, activeBeaconGUID), healAmount
+		if( activeBeaconGUID and activeBeaconGUID ~= guid and guidToUnit[activeBeaconGUID] and UnitIsVisible(guidToUnit[activeBeaconGUID]) ) then
+			return string.format("%s,%s", compressGUID[guid], compressGUID[activeBeaconGUID]), healAmount
 		end
 		
-		return guid, healAmount
+		return compressGUID[guid], healAmount
 	end
 
 	-- If only every other class was as easy as Paladins
@@ -500,21 +558,21 @@ local function loadPriestData()
 	-- Check for beacon when figuring out who to heal
 	GetHealTargets = function(guid, healAmount, spellName, spellRank)
 		if( spellName == BindingHeal ) then
-			return string.format("%s,%s", guid, playerGUID), healAmount
+			return string.format("%s,%s", compressGUID[guid], compressGUID[playerGUID]), healAmount
 		elseif( spellName == PrayerofHealing ) then
-			local list = guid
+			local list = compressGUID[guid]
 			
-			local group = PendHeals.guidToGroup[guid]
-			for guid, id in pairs(PendHeals.guidToGroup) do
-				if( UnitExists(PendHeals.guidToUnit[guid]) ) then
-					list = list .. "," .. guid
+			local group = guidToGroup[guid]
+			for groupGUID, id in pairs(guidToGroup) do
+				if( guid ~= groupGUID and UnitIsVisible(guidToUnit[groupGUID]) ) then
+					list = list .. "," .. compressGUID[groupGUID]
 				end
 			end
 			
 			return list, healAmount
 		end
 		
-		return guid, healAmount
+		return compressGUID[guid], healAmount
 	end
 	
 	-- If only every other class was as easy as Paladins
@@ -637,10 +695,10 @@ local function loadShamanData()
 	GetHealTargets = function(guid, healAmount, spellName, spellRank)
 		-- Glyph of Healing Wave, heals you for 20% of your heal when you heal someone else
 		if( glyphCache[55551] and guid ~= playerGUID and spellName == HealingWave ) then
-			return string.format("%s,%d,%s,%d", guid, healAmount, playerGUID, healAmount *  0.20)
+			return string.format("%s,%d,%s,%d", compressGUID[guid], healAmount, compressGUID[guid], healAmount *  0.20)
 		end
 	
-		return guid, healAmount
+		return compressGUID[guid], healAmount
 	end
 	
 	-- If only every other class was as easy as Paladins
@@ -790,24 +848,51 @@ PendHeals.healingStackMods = PendHeals.healingStackMods or {
 local healingStackMods, selfModifiers = PendHeals.healingStackMods, PendHeals.selfModifiers
 local healingModifiers, longAuras = PendHeals.healingModifiers, PendHeals.longAuras
 local currentModifiers = PendHeals.currentModifiers
-local distribution, instanceType
 
 -- DEBUG
 local debugGUIDMap = {}
 
+local distribution
 local function sendMessage(msg)
-	SendAddonMessage(COMM_PREFIX, msg, distribution)
+	if( distribution ) then
+		--SendAddonMessage(COMM_PREFIX, msg, distribution)
+	end
+end
+
+-- Keep track of where all the data should be going
+local instanceType
+local function updateDistributionChannel()
+	if( instanceType == "pvp" or instanceType == "arena" ) then
+		distribution = "BATTLEGROUND"
+	elseif( GetNumRaidMembers() > 0 ) then
+		distribution = "RAID"
+	elseif( GetNumPartyMembers() > 0 ) then
+		distribution = "PARTY"
+	else
+		distribution = nil
+	end
 end
 
 -- Figure out where we should be sending messages and wipe some caches
 function PendHeals:ZONE_CHANGED_NEW_AREA()
 	local type = select(2, IsInInstance())
 	if( type ~= instanceType ) then
+		instanceType = type
+		
+		updateDistributionChannel()
 		distribution = ( type == "pvp" or type == "arena" ) and "BATTLEGROUND" or "RAID"
 		
 		-- DEBUG
 		table.wipe(debugGUIDMap)
-			
+		
+		-- Sanity checking will ensure that people who leave the group have their data wiped, this just makes sure
+		-- that we don't need up with pending data between zone ins. Might need to fire callbacks if we did clear something I suppose? Hrm
+		--for _, spells in pairs(self.pendingHeals) do
+		--	for _, spell in pairs(spells) do
+		--		table.wipe(spells)
+		--	end
+		--end
+		
 		-- Changes the value of Necrotic Poison based on zone type, if there are more difficulty type MS's I'll support those too
 		-- Heroic = 90%, Non-Heroic = 75%
 		if( GetRaidDifficulty() == 2 or GetRaidDifficulty() == 4 ) then
@@ -815,9 +900,9 @@ function PendHeals:ZONE_CHANGED_NEW_AREA()
 		else
 			healingModifiers[GetSpellInfo(53121)] = 0.10
 		end
+	else
+		instanceType = type
 	end
-	
-	instanceType = type
 end
 
 -- Figure out the modifier for the players healing in general
@@ -839,7 +924,7 @@ end
 -- This solution bugs me a ton, I don't like having to do aura checks in UNIT_AURA it's rather wasteful
 -- pure CLEU isn't a good solution due to ranged issues, going to have to come a hybrid system I think. But as modifiers are local
 -- it's not something that will hugely affect the library either way as any change won't cause compatibility issues.
--- on the other hand, I hate having to keep a table for every single GUID we are tracking. :|
+-- on the other hand, I hate having to keep a table for every single GUID we are tracking.
 local alreadyAdded = {}
 function PendHeals:UNIT_AURA(unit)
 	if( not UnitIsPlayer(unit) or ( unit ~= "player" and not UnitPlayerOrPetInParty(unit) and not UnitPlayerOrPetInRaid(unit) ) ) then return end
@@ -917,7 +1002,7 @@ function PendHeals:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID,
 	end
 end
 
-
+-- Monitor glyph changes
 function PendHeals:GlyphsUpdated(id)
 	local spellID = glyphCache[id]
 	
@@ -994,39 +1079,210 @@ function PendHeals:PLAYER_EQUIPMENT_CHANGED()
 	end
 end
 
--- Comm code
--- Stolen from Threat-2.0, compresses GUIDs from 18 characters -> 10 and uncompresses them to their original state
-local map = {[254] = "\254\252", [61] = "\254\251", [58] = "\254\250", [255] = "\254\253", [0] = "\255"} 
-local guidCompressHelper = function(x)
-   local a = tonumber(x, 16) 
-   return map[a] or string.char(a)
+-- COMM CODE
+local pendingHeals = PendHeals.pendingHeals
+local tempPlayerList = {}
+
+-- Direct heal started
+local function loadHealList(pending, amount, endTime, ...)
+	table.wipe(tempPlayerList)
+	
+	-- For the sake of consistency, even a heal doesn't have multiple end times like a hot, it'll be treated as such in the DB
+	if( amount > 0 ) then
+		for i=1, select("#", ...) do
+			local guid = decompressGUID[select(i, ...)]
+			table.insert(pending, guid)
+			table.insert(pending, amount)
+			table.insert(pending, endTime)
+			table.insert(tempPlayerList, guid)
+		end
+	elseif( amount == -1 ) then
+		for i=1, select("#", ...), 2 do
+			local guid = decompressGUID[select(i, ...)]
+			local amount = tonumber((select(i + 1, ...)))
+			if( amount ) then
+				table.insert(pending, guid)
+				table.insert(pending, amount)
+				table.insert(pending, endTime)
+				table.insert(tempPlayerList, guid)
+			end
+		end
+	end
 end
 
-local dfmt = "0x%02X%02X%02X%02X%02X%02X%02X%02X"
-local function unescape(str)
-   str = string.gsub(str, "\255", "\000")
-   str = string.gsub(str, "\254\253", "\255")
-   str = string.gsub(str, "\254\251", "\061")
-   str = string.gsub(str, "\254\250", "\058")
-   return string.gsub(str, "\254\252", "\254")
+local function parseDirectHeal(sender, spellID, amount, ...)
+	local casterGUID = UnitGUID(sender)
+	local spellName = GetSpellInfo(spellID)
+	if( not casterGUID or not spellName or not amount or select("#", ...) == 0 ) then return end
+	
+	local endTime = select(6, UnitCastingInfo(sender))
+	if( not endTime ) then return end
+	
+
+	pendingHeals[casterGUID] = pendingHeals[casterGUID] or {}
+	pendingHeals[casterGUID][spellName] = pendingHeals[casterGUID][spellName] or {}
+
+	local pending = pendingHeals[casterGUID][spellName]
+	table.wipe(pending)
+	pending.endTime = endTime / 1000
+	pending.type = "cast"
+
+	loadHealList(pending, amount, 0, ...)
+	PendHeals.callbacks:Fire("PendingHeals_HealStarted", casterGUID, spellID, pending.endTime, unpack(tempPlayerList))
 end
 
-local compressGUID = setmetatable({}, {
-	__index = function(self, guid)
-         local cguid = string.match(guid, "0x(.*)")
-         local str  = gsub(cguid, "(%x%x)", guid_compress_helper)
-         self[guid] = str
-         return str
-	end})
+-- Channeled heal started
+local function parseChannelHeal(sender, spellID, amount, totalTicks, ...)
+	local casterGUID = UnitGUID(sender)
+	local spellName = GetSpellInfo(spellID)
+	if( not casterGUID or not spellName or not totalTicks or not amount or select("#", ...) == 0 ) then return end
 
-local decompressGUID = setmetatable({}, {
-	__index = function(self, str)
-		if( not str ) then return nil end
-		local usc = unescape(str)
-		local guid = string.format(dfmt, string.byte(usc, 1, 8))
-		self[str] = guid
-		return guid
-	end})
+	local startTime, endTime = select(5, UnitChannelInfo(sender))
+	if( not startTime or not endTime ) then return end
+
+	pendingHeals[casterGUID] = pendingHeals[casterGUID] or {}
+	pendingHeals[casterGUID][spellName] = pendingHeals[casterGUID][spellName] or {}
+
+	local pending = pendingHeals[casterGUID][spellName]
+	table.wipe(pending)
+	pending.startTime = startTime / 1000
+	pending.endTime = endTime / 1000
+	pending.totalTicks = totalTicks
+	pending.tickInterval = (pending.endTime - pending.startTime) / totalTicks
+	pending.type = "channel"
+	
+	loadHealList(pending, amount, 0, ...)
+
+	PendHeals.callbacks:Fire("PendingHeals_HealStarted", casterGUID, spellID, pending.endTime, unpack(tempPlayerList))
+end
+
+-- Hot heal started
+local function parseHotHeal(sender, spellID, amount, totalTicks, ...)
+	if( not amount or not totalTicks or select("#", ...) == 0 ) then return end
+
+end
+
+-- Heal finished
+local function parseHealEnd(sender, spellID, ...)
+	local casterGUID = UnitGUID(sender)
+	local spellName = GetSpellInfo(spellID)
+	if( not casterGUID or not spellName or not pendingHeals[casterGUID] ) then return end
+	
+	-- Hots should use spellIDs, casts should use spell names. This will keep everything happy for things like Regrowth with a heal and a hot
+	local pending = pendingHeals[casterGUID][spellID] or pendingHeals[casterGUID][spellName]
+	if( not pending ) then return end
+		
+	table.wipe(tempPlayerList)
+	
+	if( select("#", ...) == 0 ) then
+		for i=#(pending), 1, -3 do
+			table.remove(pending, i)
+			table.remove(pending, i - 1)
+			local guid = table.remove(pending, i - 2)
+			table.insert(tempPlayerList, guid)
+		end
+		
+	-- Have to remove a specific list of people, only really necessary for hots which can have multiple entries, but different end times
+	else
+		for i=1, select("#", ...) do
+			table.insert(tempPlayerList, decompressGUID[select(i, ...)])
+		end
+		
+		for i=#(pending), 1, -3 do
+			for _, guid in pairs(tempPlayerList) do
+				if( pending[i - 2][guid] ) then
+					table.remove(pending, i)
+					table.remove(pending, i - 1)
+					table.remove(pending, i - 2)
+				end
+			end
+		end
+	end
+		
+	-- Double check and make sure we actually removed at least one person
+	if( #(tempPlayerList) > 0 ) then
+		PendHeals.callbacks:Fire("PendingHeals_HealStopped", casterGUID, spellID, unpack(tempPlayerList))
+	end
+end
+
+-- Heal delayed
+local function parseHealDelayed(sender, spellID, ...)
+	local casterGUID = UnitGUID(sender)
+	local spellName = GetSpellInfo(spellID)
+	if( not casterGUID or not spellName or not pendingHeals[casterGUID] or not pendingHeals[casterGUID][spellName] ) then return end
+
+	local pending = pendingHeals[casterGUID][spellName]
+	if( pending.type == "cast" ) then
+		local endTime = select(6, UnitCastingInfo(sender))
+		if( not endTime ) then return end
+		pending.endTime = endTime / 1000
+
+	elseif( pending.type == "channel" ) then
+		local startTime, endTime = select(5, UnitChannelInfo(sender))
+		if( not startTime or not endTime ) then return end
+		pending.startTime = startTime / 1000
+		pending.endTime = endTime / 1000
+		pending.tickInterval = (pending.endTime - pending.startTime)
+	end
+
+	table.wipe(tempPlayerList)
+
+	for i=1, select("#", ...) do
+		table.insert(tempPlayerList, decompressGUID[select(i, ...)])
+	end
+
+	PendHeals.callbacks:Fire("PendingHeals_HealDelayed", casterGUID, spellID, pending.endTime, unpack(tempPlayerList))
+end
+
+-- DEBUG
+--[[
+local Test = {}
+function Test:Dump(...)
+	table.insert(TestLog, {GetTime(), ...})
+	print(...)
+end
+
+PendHeals.RegisterCallback(Test, "PendingHeals_HealStarted", "Dump")
+PendHeals.RegisterCallback(Test, "PendingHeals_HealDelayed", "Dump")
+PendHeals.RegisterCallback(Test, "PendingHeals_HealStopped", "Dump")
+PendHeals.RegisterCallback(Test, "PendingHeals_ModifierChanged", "Dump")
+]]
+
+-- After checking around 150-200 messages in battlegrounds, server seems to always be passed (if they are from another server)
+-- so the casterGUID isn't needed to be sent, I'll keep it around in case it does, but it also gives expansion potentional without breaking compatibility
+function PendHeals:CHAT_MSG_ADDON(prefix, message, channel, sender)
+	-- Reject any comm in a distribution we aren't watching
+	if( prefix ~= COMM_PREFIX --[[or channel ~= distribution or sender == playerName]] ) then return end
+	
+	local commType, _, spellID, arg1, arg2, arg3, arg4 = string.split(":", message)
+	spellID = tonumber(spellID)
+	if( not commType or not spellID ) then return end
+	
+	--- New direct heal - D:<casterID>:<extra>:<spellID>:<amount>:target1,target2,target3,target4,etc
+	if( commType == "D" and arg1 and arg2 ) then
+		parseDirectHeal(sender, spellID, tonumber(arg1), string.split(",", arg2))
+	--- New channel heal - C:<casterID>:<extra>:<spellID>:<amount>:<tickTotal>:target1,target2,target3,target4,etc
+	elseif( commType == "C" and arg1 and arg2 and arg3 ) then
+		parseChannelHeal(sender, spellID, tonumber(arg1), tonumber(arg2), string.split(",", arg3))
+	--- New hot - H:<casterID>:<extra>:<spellID>:<amount>:<tickTotal>:<stack>:target1,target2,target3,target4,etc
+	elseif( commType == "H" and arg1 and arg2 ) then
+		parseHotHeal(sender, spellID, tonumber(arg1), tonumber(arg2), tonumber(arg3), string.split(",", arg4))
+	--- Heal stopped - S:<casterID>:<extra>:<spellID>:target1,target2,target3,target4,etc
+	elseif( commType == "S" ) then
+		if( arg1 and arg1 ~= "" ) then
+			parseHealEnd(sender, spellID, string.split(",", arg1))
+		else
+			parseHealEnd(sender, spellID)
+		end
+	--- Heal interrupted - P:<casterID>:<extra>:<spellID>:target1,target2,target3,target4,etc
+	elseif( commType == "P" ) then
+		if( arg1 and arg1 ~= "" ) then
+			parseHealDelayed(sender, spellID, string.split(",", arg1))
+		else
+			parseHealDelayed(sender, spellID)
+		end
+	end
+end
 
 -- Spell cast magic
 -- When auto self cast is on, the UNIT_SPELLCAST_SENT event will always come first followed by the funciton calls
@@ -1101,12 +1357,9 @@ local function dataFailed(priority, spell, actual, target)
 end
 
 function PendHeals:UNIT_SPELLCAST_START(unit, spellName, spellRank, id)
-	if( unit ~= "player" or not spellData[spellName] or not averageHeal[spellName .. spellRank] ) then
-		return
-	end
-
-	local spellID = spellName .. spellRank
-	local castGUID = castGUIDs[spellID]
+	if( unit ~= "player" or not spellData[spellName] or not averageHeal[spellName .. spellRank] ) then return end
+	local nameID = spellName .. spellRank
+	local castGUID = castGUIDs[nameID]
 	
 	-- DEBUG
 	local name
@@ -1114,19 +1367,23 @@ function PendHeals:UNIT_SPELLCAST_START(unit, spellName, spellRank, id)
 		name = stripServer(debugGUIDMap[castGUID] or UnitName(guidToUnit[castGUID]) or castGUID or "")
 	end
 	
-	if( not castGUID or name ~= castList[spellID] or guidPriorities[spellID] == 0 ) then
-		dataFailed(guidPriorities[spellID], spellName, castList[spellID], name or castGUID)
+	if( ( not castGUID or name ~= castList[nameID] or guidPriorities[nameID] == 0 ) and spellName ~= "Tranquility" ) then
+		dataFailed(guidPriorities[nameID], spellName, castList[nameID], name or castGUID)
 	end
 
-	-- CalculateHeaing figures out the actual heal amount
+	-- Figure out who we are healing and for how much
 	local type, amount, ticks = CalculateHealing(castGUID, spellName, spellRank)
-	-- GetHealTargets will figure out who the heal is supposed to land on
-	local targets, amount = GetHealTargets(castGUID, amount, spellName, spellRank)
-	
-	if( amount ) then
-		print(spellName .. " (" .. (spellRank or "") .. ")", type, ticks or 0, amount, targets)
-	else
-		print(spellName .. " (" .. (spellRank or "") .. ")", type, ticks or 0, "<override>", targets)
+	local targets, amount = GetHealTargets(castGUID, math.max(amount, 0), spellName, spellRank)
+
+	--- D:<casterID>:<spellID>:<amount>:target1,target2,target3,target4,etc
+	if( type == "heal" ) then
+		sendMessage(string.format("D::%d:%d:%s", self.spellToID[nameID] or 0, amount or "", targets))
+	--- C:<casterID>:<spellID>:<amount>:<tickTotal>:target1,target2,target3,target4,etc
+	elseif( type == "channel" ) then
+		sendMessage(string.format("C::%d:%d:%s:%s", self.spellToID[nameID] or 0, amount or "", ticks, targets))
+	--- H:<casterID>:<spellID>:<amount>:<tickTotal>:<stack>:target1,target2,target3,target4,etc
+	elseif( type == "hot" ) then
+		sendMessage(string.format("H::%d:%d:%s:%s", self.spellToID[nameID] or 0, amount or "", ticks, targets))
 	end
 	
 	castID = id
@@ -1138,22 +1395,29 @@ end
 
 function PendHeals:UNIT_SPELLCAST_STOP(unit, spellName, spellRank, id)
 	if( unit ~= "player" or not spellData[spellName] or id ~= castID ) then return end
-	
-	-- Fire a comm message saying the spellcast stopped
-	--print("Spell cast done", spellName, spellRank)
+
+	sendMessage(string.format("S::%d", self.spellToID[spellName .. spellRank] or 0))
 end
 
+function PendHeals:UNIT_SPELLCAST_CHANNEL_STOP(...)
+	self:UNIT_SPELLCAST_STOP(...)
+end
+
+-- Cast didn't go through, recheck any charge data if necessary
 function PendHeals:UNIT_SPELLCAST_INTERRUPTED(unit, spellName, spellRank, id)
 	if( unit ~= "player" or not spellData[spellName] or castID ~= id ) then return end
 	
-	if( ResetChargeData ) then
-		ResetChargeData(castGUIDs[spellName .. spellRank], spellName, spellRank)
-	end
+	ResetChargeData(castGUIDs[spellName .. spellRank], spellName, spellRank)
 end
 
-function PendHeals:UNIT_SPELLCAST_CHANNEL_STOP(unit, spellName, spellRank)
-	if( unit ~= "player" ) then return end
-	--print("Spell cast done", spellName, spellRank)
+function PendHeals:UNIT_SPELLCAST_DELAYED(unit, spellName, spellRank, id)
+	if( unit ~= "player" or not spellData[spellName] or id ~= castID ) then return end
+	
+	sendMessage(string.format("P::%d", self.spellToID[spellName .. spellRank] or 0))
+end
+
+function PendHeals:UNIT_SPELLCAST_CHANNEL_UPDATE(...)
+	self:UNIT_SPELLCAST_DELAYED(...)
 end
 
 -- Need to keep track of mouseover as it can change in the split second after/before casts
@@ -1257,49 +1521,66 @@ PendHeals.UseAction = PendHeals.CastSpell
 
 -- Make sure we don't have invalid units in this
 local function sanityCheckMapping()
-	for guid, unit in pairs(PendHeals.guidToUnit) do
-		if( UnitGUID(unit) ~= guid ) then
-			PendHeals.guidToUnit[guid] = nil
-			PendHeals.guidToGroup[guid] = nil
+	for guid, unit in pairs(guidToUnit) do
+		if( not UnitExists(unit) or UnitGUID(unit) ~= guid ) then
+			guidToUnit[guid] = nil
+			guidToGroup[guid] = nil
+			
+			compressGUID[guid] = nil
+			decompressGUID[guid] = nil
+			
+			pendingHeals[guid] = nil
 		end
 	end
 end
 
--- Keeps track of pet GUIDs, pets are considered vehicles too so this lets us map a GUID to vehicles
+-- Once we leave a group all of the table data we had should be reset completely to release the tables into memory
+local wasInParty, wasInRaid
+local function clearGUIDData()
+	-- Clear all cached GUID compressers
+	table.wipe(compressGUID)
+	table.wipe(decompressGUID)
+	
+	-- Reset our mappings
+	self.guidToUnit, self.guidToGroup = {[playerGUID] = "player"}, {}
+	guidToUnit, guidToGroup = self.guidToUnit, self.guidToGroup
+	
+	-- And also reset all pending data
+	self.pendingHeals = {}
+	pendingHeals = self.pendingHeals
+	
+	wasInParty, wasInRaid = nil, nil
+end
+
+-- Keeps track of pet GUIDs, as pets are considered vehicles this will also map vehicle GUIDs to unit
 function PendHeals:UNIT_PET(unit)
 	unit = unit == "player" and "pet" or unit .. "pet"
 	
 	local guid = UnitGUID(unit)
 	if( guid ) then
-		self.guidToUnit[guid] = unit
+		guidToUnit[guid] = unit
 	end
 end
 
 -- Keep track of party GUIDs, ignored in raids as RRU will handle that mapping
-local wasInParty, wasInRaid
 function PendHeals:PARTY_MEMBERS_CHANGED()
 	if( GetNumRaidMembers() > 0 ) then return end
+	updateDistributionChannel()
 	
 	if( GetNumPartyMembers() == 0 ) then
-		table.wipe(self.guidToUnit)
-		table.wipe(self.guidToGroup)
-		
-		self.guidToUnit[playerGUID] = "player"
-
-		wasInParty = nil
-		wasInRaid = nil
+		clearGUIDData()
 		return
 	end
 	
 	-- Because parties do not have "real" groups, we will simply pretend they are all in group 0
-	self.guidToGroup[playerGUID] = 0
+	guidToGroup[playerGUID] = 0
 	
 	for i=1, MAX_PARTY_MEMBERS do
 		local unit = "party" .. i
 		if( UnitExists(unit) ) then
 			local guid = UnitGUID(unit)
-			self.guidToUnit[guid] = unit
-			self.guidToGroup[guid] = 0
+			guidToUnit[guid] = unit
+			guidToGroup[guid] = 0
 			
 			if( not wasInParty ) then
 				self:UNIT_PET(unit)
@@ -1313,14 +1594,11 @@ end
 
 -- Keep track of raid GUIDs
 function PendHeals:RAID_ROSTER_UPDATE()
+	updateDistributionChannel()
+
 	-- Left raid, clear any cache we had
 	if( GetNumRaidMembers() == 0 ) then
-		table.wipe(self.guidToUnit)
-		table.wipe(self.guidToGroup)
-
-		self.guidToUnit[playerGUID] = "player"
-		wasInRaid = nil
-		wasInParty = nil
+		clearGUIDData()
 		return
 	end
 	
@@ -1338,8 +1616,8 @@ function PendHeals:RAID_ROSTER_UPDATE()
 		end
 	end
 	
-	wasInRaid = true
 	sanityCheckMapping()
+	wasInRaid = true
 end
 
 -- PLAYER_ALIVE = got talent data
@@ -1382,7 +1660,7 @@ function PendHeals:OnInitialize()
 	
 	debugGUIDMap[playerGUID] = playerName
 	
-	self.guidToUnit[playerGUID] = "player"
+	guidToUnit[playerGUID] = "player"
 	
 	-- Figure out the initial relic
 	self:PLAYER_EQUIPMENT_CHANGED()
@@ -1398,6 +1676,10 @@ function PendHeals:OnInitialize()
 		self:PLAYER_TALENT_UPDATE()
 	end
 	
+	if( ResetChargeData ) then
+		PendHeals.frame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+	end
+
 	-- This resets the target timer next OnUpdate, the user would basically have to press the target button twice within
 	-- <0.10 seconds, more like <0.05 to be able to bug it out
 	self.resetFrame = self.resetFrame or CreateFrame("Frame")
@@ -1434,7 +1716,10 @@ PendHeals.frame = PendHeals.frame or CreateFrame("Frame")
 PendHeals.frame:UnregisterAllEvents()
 PendHeals.frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 PendHeals.frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+PendHeals.frame:RegisterEvent("CHAT_MSG_ADDON")
 PendHeals.frame:RegisterEvent("UNIT_AURA")
+PendHeals.frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+PendHeals.frame:RegisterEvent("RAID_ROSTER_UPDATE")
 PendHeals.frame:SetScript("OnEvent", OnEvent)
 
 -- If they aren't a healer, all they need to know about are modifier changes
@@ -1448,17 +1733,16 @@ PendHeals.frame:RegisterEvent("UNIT_SPELLCAST_START")
 PendHeals.frame:RegisterEvent("UNIT_SPELLCAST_STOP")
 PendHeals.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 PendHeals.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
-PendHeals.frame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
-PendHeals.frame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+PendHeals.frame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
+PendHeals.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 PendHeals.frame:RegisterEvent("PLAYER_TALENT_UPDATE")
+PendHeals.frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+PendHeals.frame:RegisterEvent("PLAYER_TARGET_CHANGED")
+PendHeals.frame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 PendHeals.frame:RegisterEvent("SPELLS_CHANGED")
 PendHeals.frame:RegisterEvent("GLYPH_ADDED")
 PendHeals.frame:RegisterEvent("GLYPH_REMOVED")
 PendHeals.frame:RegisterEvent("GLYPH_UPDATED")
-PendHeals.frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-PendHeals.frame:RegisterEvent("PLAYER_TARGET_CHANGED")
-PendHeals.frame:RegisterEvent("RAID_ROSTER_UPDATE")
-PendHeals.frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 PendHeals.frame:RegisterEvent("UNIT_PET")
 
 -- If the player is not logged in yet, then we're still loading and will watch for PLAYER_LOGIN to assume everything is initialized
