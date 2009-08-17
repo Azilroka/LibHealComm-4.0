@@ -1,4 +1,5 @@
 package-as: LibHealComm-4.0
+enable-nolib-creation: no
 externals:
     libs/LibStub:
         url: svn://svn.wowace.com/wow/libstub/mainline/trunk
