@@ -219,7 +219,7 @@ function HealComm:GetHealAmount(guid, bitFlag, time, casterGUID)
 	return amount > 0 and amount or nil
 end
 
--- Gets healing amounts for everyone except the player
+-- Gets healing amounts for everyone except the player using the passed filters
 function HealComm:GetOthersHealAmount(guid, bitFlag, time)
 	local amount = 0
 	for casterGUID, spells in pairs(pendingHeals) do
@@ -235,8 +235,8 @@ end
 -- Thanks to Gagorian (DrDamage) for letting me steal his formulas and such
 local playerHealModifier, playerCurrentRelic = 1
 
-local playerModifiers, averageHeal, rankNumbers = HealComm.playerModifiers, HealComm.averageHeal, HealComm.rankNumbers, HealComm.glyphCache
-local guidToUnit, guidToGroup, spellData = HealComm.guidToUnit, HealComm.guidToGroup, HealComm.spellData, HealComm.hotData
+local playerModifiers, averageHeal, rankNumbers = HealComm.playerModifiers, HealComm.averageHeal, HealComm.rankNumbers
+local guidToUnit, guidToGroup, glyphCache = HealComm.guidToUnit, HealComm.guidToGroup, HealComm.glyphCache
 local talentData, baseHealingRelics = {}, {}
 local equippedSetPieces, itemSetsData = {}, {}
 
