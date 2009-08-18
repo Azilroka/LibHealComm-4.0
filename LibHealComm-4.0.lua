@@ -15,10 +15,11 @@ HealComm.glyphCache = HealComm.glyphCache or {}
 HealComm.playerModifiers = HealComm.playerModifiers or {}
 HealComm.guidToGroup = HealComm.guidToGroup or {}
 HealComm.guidToUnit = HealComm.guidToUnit or {}
-HealComm.spellData = HealComm.spellData or {}
-HealComm.hotData = HealComm.hotData or {}
 HealComm.spellToID = HealComm.spellToID or {}
 HealComm.pendingHeals = HealComm.pendingHeals or {}
+
+-- These shouldn't be persistant between versions because if healing data changes it should reload all the spells inside regardless
+local spellData, hotData = {}, {}
 
 -- Stolen from Threat-2.0, compresses GUIDs from 18 characters -> 10 and uncompresses them to their original state
 local map = {[254] = "\254\252", [61] = "\254\251", [58] = "\254\250", [255] = "\254\253", [0] = "\255"} 
@@ -106,7 +107,7 @@ if( not HealComm.averageHeal ) then
 						
 						-- Some spells like Tranquility or hots in general don't have a range on them, match the first number it finds
 						-- (and pray)
-						if( not minHeal and not maxHeal and HealComm.spellData[spellName].noRange ) then
+						if( not minHeal and not maxHeal and spellData[spellName].noRange ) then
 							local heal = string.match(text:GetText(), "(%d+)")
 							minHeal, maxHeal = heal, heal
 						end
@@ -143,7 +144,7 @@ local ALL_HEALS = 0x0f
 local DIRECT_HEALS = 0x01
 local CHANNEL_HEALS = 0x02
 local HOT_HEALS = 0x04
-local CASTED_HEALS = bit.band(DIRECT_HEALS, CHANNEL_HEALS)
+local CASTED_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS)
 --local ABSORB_HEALS = 0x08
 
 HealComm.ALL_HEALS, HealComm.CHANNEL_HEALS, HealComm.DIRECT_HEALS, HealComm.HOT_HEALS, HealComm.CASTED_HEALS = ALL_HEALS, CHANNEL_HEALS, DIRECT_HEALS, HOT_HEALS, CASTED_HEALS
@@ -219,7 +220,7 @@ function HealComm:GetHealAmount(guid, bitFlag, time, casterGUID)
 end
 
 -- Gets healing amounts for everyone except the player
-function HealComm:GetOtherHealAmount(guid, bitFlag, time)
+function HealComm:GetOthersHealAmount(guid, bitFlag, time)
 	local amount = 0
 	for casterGUID, spells in pairs(pendingHeals) do
 		if( casterGUID ~= playerGUID ) then
@@ -232,18 +233,20 @@ end
 
 -- Healing class data
 -- Thanks to Gagorian (DrDamage) for letting me steal his formulas and such
-local playerHealModifier = 1
+local playerHealModifier, playerCurrentRelic = 1
 
-local playerModifiers, averageHeal, rankNumbers, glyphCache = HealComm.playerModifiers, HealComm.averageHeal, HealComm.rankNumbers, HealComm.glyphCache
-local guidToUnit, guidToGroup, spellData, hotData = HealComm.guidToUnit, HealComm.guidToGroup, HealComm.spellData, HealComm.hotData
-local spellData, talentData, equippedSetPieces, itemSetsData, baseHealingRelics = HealComm.spellData, {}, {}, {}
+local playerModifiers, averageHeal, rankNumbers = HealComm.playerModifiers, HealComm.averageHeal, HealComm.rankNumbers, HealComm.glyphCache
+local guidToUnit, guidToGroup, spellData = HealComm.guidToUnit, HealComm.guidToGroup, HealComm.spellData, HealComm.hotData
+local talentData, baseHealingRelics = {}, {}
+local equippedSetPieces, itemSetsData = {}, {}
 
-local currentRelicID, CalculateHealing, GetHealTargets, AuraHandler, CalculateHotHealing, ResetChargeData
+-- Function calls for class data
+local CalculateHealing, GetHealTargets, AuraHandler, CalculateHotHealing, ResetChargeData
 
-	--- H:<casterID>:<spellID>:<amount>:<tickTotal>:<stack>:target1,target2,target3,target4,etc
-	--elseif( type == HOT_HEALS ) then
-		--sendMessage(string.format("H::%d:%d:%s:%s", self.spellToID[nameID] or 0, amount or "", ticks, targets))
-	--end
+--- H:<casterID>:<spellID>:<amount>:<tickTotal>:<stack>:target1,target2,target3,target4,etc
+--elseif( type == HOT_HEALS ) then
+	--sendMessage(string.format("H::%d:%d:%s:%s", self.spellToID[nameID] or 0, amount or "", ticks, targets))
+--end
 
 -- UnitBuff priortizes our buffs over everyone elses when there is a name conflict, so yay for that
 local function unitHasAura(unit, name)
@@ -412,7 +415,7 @@ local function loadDruidData()
 			multiModifier = multiModifier * (1 + talentData[MasterShapeshifter].current)
 			
 			-- 32387 - Idol of the Raven Godess, +44 SP while in TOL
-			if( currentRelicID == 32387 ) then
+			if( playerCurrentRelic == 32387 ) then
 				spellPower = spellPower + 44
 			end
 		end
@@ -428,7 +431,7 @@ local function loadDruidData()
 		-- Nourish
 		elseif( spellName == Nourish ) then
 			-- 46138 - Idol of Flourishing Life, +187 Nourish SP
-			if( currentRelicID == 46138 ) then
+			if( playerCurrentRelic == 46138 ) then
 				spellPower = spellPower + 187
 			end
 			
@@ -559,11 +562,11 @@ local function loadPaladinData()
 		multiModifier = multiModifier * (1 + talentData[HealingLight].current)
 		
 		-- Apply extra spell power based on libram
-		if( currentRelicID ) then
-			if( spellName == HolyLight and holyLibrams[currentRelicID] ) then
-				spellPower = spellPower + holyLibrams[currentRelicID]
-			elseif( spellName == FlashofLight and flashLibrams[currentRelicID] ) then
-				spellPower = spellPower + flashLibrams[currentRelicID]
+		if( playerCurrentRelic ) then
+			if( spellName == HolyLight and holyLibrams[playerCurrentRelic] ) then
+				spellPower = spellPower + holyLibrams[playerCurrentRelic]
+			elseif( spellName == FlashofLight and flashLibrams[playerCurrentRelic] ) then
+				spellPower = spellPower + flashLibrams[playerCurrentRelic]
 			end
 		end
 		
@@ -814,7 +817,7 @@ local function loadShamanData()
 			end
 						
 			-- Totem of Spontaneous Regrowth, +88 Spell Power to Healing Wave
-			if( currentRelicID == 27544 ) then
+			if( playerCurrentRelic == 27544 ) then
 				spellPower = spellPower + 88
 			end
 			
@@ -829,8 +832,8 @@ local function loadShamanData()
 			end
 			
 			-- Lesser Healing Wave spell power modifing totems
-			if( currentRelicID and lhwTotems[currentRelicID] ) then
-				spellPower = spellPower + lhwTotems[currentRelicID]
+			if( playerCurrentRelic and lhwTotems[playerCurrentRelic] ) then
+				spellPower = spellPower + lhwTotems[playerCurrentRelic]
 			end
 			
 			spellPower = spellPower * ((spellData[spellName].coeff * 1.88) + talentData[TidalWaves].spent * 0.02)
@@ -860,73 +863,82 @@ HealComm.selfModifiers = HealComm.selfModifiers or {
 	[31884] = 1.20, -- Avenging Wrath
 }
 
+local function getName(spellID)
+	local name = GetSpellInfo(spellID)
+	--@debug@
+	if( not name ) then
+		print(string.format("%s-r%s: Failed to find spellID %d", major, minor, spellID))
+	end
+	--@end-debug@
+	return name or ""
+end
+
 -- There is one spell currently that has a name conflict, which is ray of Pain from the Void Walkers in Nagrand
 -- if it turns out there are more later on (which is doubtful) I'll change it
 HealComm.healingModifiers = HealComm.healingModifiers or {
-	[GetSpellInfo(30843)] = 0.00, -- Enfeeble
-	[GetSpellInfo(41292)] = 0.00, -- Aura of Suffering
-	[GetSpellInfo(59513)] = 0.00, -- Embrace of the Vampyr
-	[GetSpellInfo(55593)] = 0.00, -- Necrotic Aura
-	[GetSpellInfo(34625)] = 0.25, -- Demolish
-	[GetSpellInfo(34366)] = 0.25, -- Ebon Poison
-	[GetSpellInfo(19716)] = 0.25, -- Gehennas' Curse
-	[GetSpellInfo(24674)] = 0.25, -- Veil of Shadow
+	[getName(30843)] = 0.00, -- Enfeeble
+	[getName(41292)] = 0.00, -- Aura of Suffering
+	[getName(59513)] = 0.00, -- Embrace of the Vampyr
+	[getName(55593)] = 0.00, -- Necrotic Aura
+	[getName(34625)] = 0.25, -- Demolish
+	[getName(34366)] = 0.25, -- Ebon Poison
+	[getName(19716)] = 0.25, -- Gehennas' Curse
+	[getName(24674)] = 0.25, -- Veil of Shadow
 	-- Despite the fact that Wound Poison uses the same 50% now, it's a unique spellID and buff name for each rank
-	[GetSpellInfo(13218)] = 0.50, -- 1
-	[GetSpellInfo(13222)] = 0.50, -- 2
-	[GetSpellInfo(13223)] = 0.50, -- 3
-	[GetSpellInfo(13224)] = 0.50, -- 4
-	[GetSpellInfo(27189)] = 0.50, -- 5
-	[GetSpellInfo(57974)] = 0.50, -- 6
-	[GetSpellInfo(57975)] = 0.50, -- 7
-	[GetSpellInfo(20900)] = 0.50, -- Aimed Shot
-	[GetSpellInfo(21551)] = 0.50, -- Mortal Strike
-	[GetSpellInfo(40599)] = 0.50, -- Arcing Smash
-	[GetSpellInfo(36917)] = 0.50, -- Magma-Throwser's Curse
-	[GetSpellInfo(23169)] = 0.50, -- Brood Affliction: Green
-	[GetSpellInfo(22859)] = 0.50, -- Mortal Cleave
-	[GetSpellInfo(36023)] = 0.50, -- Deathblow
-	[GetSpellInfo(13583)] = 0.50, -- Curse of the Deadwood
-	[GetSpellInfo(32378)] = 0.50, -- Filet
-	[GetSpellInfo(35189)] = 0.50, -- Solar Strike
-	[GetSpellInfo(32315)] = 0.50, -- Soul Strike
-	[GetSpellInfo(60084)] = 0.50, -- The Veil of Shadow
-	[GetSpellInfo(45885)] = 0.50, -- Shadow Spike
-	[GetSpellInfo(63038)] = 0.75, -- Dark Volley
-	[GetSpellInfo(52771)] = 0.75, -- Wounding Strike
-	[GetSpellInfo(48291)] = 0.75, -- Fetid Healing
-	[GetSpellInfo(54525)] = 0.80, -- Shroud of Darkness (This might be wrong)
-	[GetSpellInfo(48301)] = 0.80, -- Mind Trauma (Improved Mind Blast)
-	[GetSpellInfo(68391)] = 0.80, -- Permafrost, the debuff is generic no way of seeing 7/13/20, go with 20
-	[GetSpellInfo(34073)] = 0.85, -- Curse of the Bleeding Hollow
-	[GetSpellInfo(43410)] = 0.90, -- Chop
-	[GetSpellInfo(34123)] = 1.06, -- Tree of Life
-	[GetSpellInfo(64844)] = 1.10, -- Divine Hymn
-	[GetSpellInfo(47788)] = 1.40, -- Guardian Spirit
-	[GetSpellInfo(38387)] = 1.50, -- Bane of Infinity
-	[GetSpellInfo(31977)] = 1.50, -- Curse of Infinity
-	[GetSpellInfo(41350)] = 2.00, -- Aura of Desire
+	[getName(13218)] = 0.50, -- 1
+	[getName(13222)] = 0.50, -- 2
+	[getName(13223)] = 0.50, -- 3
+	[getName(13224)] = 0.50, -- 4
+	[getName(27189)] = 0.50, -- 5
+	[getName(57974)] = 0.50, -- 6
+	[getName(57975)] = 0.50, -- 7
+	[getName(20900)] = 0.50, -- Aimed Shot
+	[getName(21551)] = 0.50, -- Mortal Strike
+	[getName(40599)] = 0.50, -- Arcing Smash
+	[getName(36917)] = 0.50, -- Magma-Throwser's Curse
+	[getName(23169)] = 0.50, -- Brood Affliction: Green
+	[getName(22859)] = 0.50, -- Mortal Cleave
+	[getName(36023)] = 0.50, -- Deathblow
+	[getName(13583)] = 0.50, -- Curse of the Deadwood
+	[getName(32378)] = 0.50, -- Filet
+	[getName(35189)] = 0.50, -- Solar Strike
+	[getName(32315)] = 0.50, -- Soul Strike
+	[getName(60084)] = 0.50, -- The Veil of Shadow
+	[getName(45885)] = 0.50, -- Shadow Spike
+	[getName(63038)] = 0.75, -- Dark Volley
+	[getName(52771)] = 0.75, -- Wounding Strike
+	[getName(48291)] = 0.75, -- Fetid Healing
+	[getName(54525)] = 0.80, -- Shroud of Darkness (This might be wrong)
+	[getName(48301)] = 0.80, -- Mind Trauma (Improved Mind Blast)
+	[getName(68391)] = 0.80, -- Permafrost, the debuff is generic no way of seeing 7/13/20, go with 20
+	[getName(34073)] = 0.85, -- Curse of the Bleeding Hollow
+	[getName(43410)] = 0.90, -- Chop
+	[getName(34123)] = 1.06, -- Tree of Life
+	[getName(64844)] = 1.10, -- Divine Hymn
+	[getName(47788)] = 1.40, -- Guardian Spirit
+	[getName(38387)] = 1.50, -- Bane of Infinity
+	[getName(31977)] = 1.50, -- Curse of Infinity
+	[getName(41350)] = 2.00, -- Aura of Desire
 }
 
 -- Easier to toss functions on 4 extra functions than add extra checks
 HealComm.healingStackMods = HealComm.healingStackMods or {
 	-- Tenacity
-	[GetSpellInfo(58549)] = function(name, rank, icon, stacks) return icon == "Interface\\Icons\\Ability_Warrior_StrengthOfArms" and stacks ^ 1.18 or 1 end,
+	[getName(58549)] = function(name, rank, icon, stacks) return icon == "Interface\\Icons\\Ability_Warrior_StrengthOfArms" and stacks ^ 1.18 or 1 end,
 	-- Focused Will
-	[GetSpellInfo(45242)] = function(name, rank, icon, stacks) return 1 + (stacks * (0.02 + rankNumbers[rank])) end,
+	[getName(45242)] = function(name, rank, icon, stacks) return 1 + (stacks * (0.02 + rankNumbers[rank])) end,
 	-- Nether Portal - Dominance
-	[GetSpellInfo(30423)] = function(name, rank, icon, stacks) return 1 + stacks * 0.01 end,
+	[getName(30423)] = function(name, rank, icon, stacks) return 1 + stacks * 0.01 end,
 	-- Dark Touched
-	[GetSpellInfo(45347)] = function(name, rank, icon, stacks) return 1 - stacks * 0.04 end, 
+	[getName(45347)] = function(name, rank, icon, stacks) return 1 - stacks * 0.04 end, 
 	-- Necrotic Strike
-	[GetSpellInfo(60626)] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end, 
+	[getName(60626)] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end, 
 	-- Mortal Wound
-	[GetSpellInfo(28467)] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end, 
+	[getName(28467)] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end, 
 }
 
 local healingStackMods, selfModifiers = HealComm.healingStackMods, HealComm.selfModifiers
-local healingModifiers, longAuras = HealComm.healingModifiers, HealComm.longAuras
-local currentModifiers = HealComm.currentModifiers
+local healingModifiers, currentModifiers = HealComm.healingModifiers, HealComm.currentModifiers
 
 local distribution
 local function sendMessage(msg)
@@ -936,8 +948,9 @@ local function sendMessage(msg)
 end
 
 -- Keep track of where all the data should be going
-local instanceType
+local instanceType, isHealerClass
 local function updateDistributionChannel()
+	local lastChannel = distribution
 	if( instanceType == "pvp" or instanceType == "arena" ) then
 		distribution = "BATTLEGROUND"
 	elseif( GetNumRaidMembers() > 0 ) then
@@ -946,6 +959,17 @@ local function updateDistributionChannel()
 		distribution = "PARTY"
 	else
 		distribution = nil
+	end
+	
+	-- If they aren't a healer we don't need to listen to these events all the time
+	if( not isHealerClass and distribution ~= lastChannel ) then
+		if( distribution ) then
+			HealComm.frame:RegisterEvent("CHAT_MSG_ADDON")
+			HealComm.frame:RegisterEvent("UNIT_AURA")
+		else
+			HealComm.frame:UnregisterEvent("CHAT_MSG_ADDON")
+			HealComm.frame:UnregisterEvent("UNIT_AURA")
+		end
 	end
 end
 
@@ -956,7 +980,6 @@ function HealComm:ZONE_CHANGED_NEW_AREA()
 		instanceType = type
 		
 		updateDistributionChannel()
-		distribution = ( type == "pvp" or type == "arena" ) and "BATTLEGROUND" or "RAID"
 		
 		-- Check and remove any expired events, in reality I should start to fire a "player healing might have updated" event too
 		local time = GetTime()
@@ -979,9 +1002,9 @@ function HealComm:ZONE_CHANGED_NEW_AREA()
 		else
 			healingModifiers[GetSpellInfo(53121)] = 0.10
 		end
-	else
-		instanceType = type
 	end
+
+	instanceType = type
 end
 
 -- Figure out the modifier for the players healing in general
@@ -1153,17 +1176,17 @@ function HealComm:PLAYER_EQUIPMENT_CHANGED()
 	end
 	
 	-- Check relic
-	local previousRelic = currentRelicID
+	local previousRelic = playerCurrentRelic
 	
-	currentRelicID = GetInventoryItemLink("player", RANGED_SLOT)
-	if( currentRelicID ) then
-		currentRelicID = tonumber(string.match(currentRelicID, "item:(%d+):"))
+	playerCurrentRelic = GetInventoryItemLink("player", RANGED_SLOT)
+	if( playerCurrentRelic ) then
+		playerCurrentRelic = tonumber(string.match(playerCurrentRelic, "item:(%d+):"))
 	end
 	
 	-- Relics that modify the base healing of a spell modify the tooltip with the new base amount, we can't assume that the tooltip that was cached
 	-- is the one with the modified (or unmodified) version so reset the cache and it will get whatever the newest version is.
-	if( previousRelic ~= currentRelicID and baseHealingRelics ) then
-		local resetSpell = previousRelic and baseHealingRelics[previousRelic] or currentRelicID and baseHealingRelics[currentRelicID]
+	if( previousRelic ~= playerCurrentRelic and baseHealingRelics ) then
+		local resetSpell = previousRelic and baseHealingRelics[previousRelic] or playerCurrentRelic and baseHealingRelics[playerCurrentRelic]
 		if( resetSpell ) then
 			for spellName, average in pairs(averageHeal) do
 				if( average and string.match(spellName, resetSpell) ) then
@@ -1792,10 +1815,7 @@ function HealComm:OnInitialize()
 	
 	guidToUnit[playerGUID] = "player"
 	
-	-- Figure out the initial relic
 	self:PLAYER_EQUIPMENT_CHANGED()
-	
-	-- ZCNE is not called when you first login/reload, so call it once more to be safe
 	self:ZONE_CHANGED_NEW_AREA()
 	
 	-- When first logging in talent data isn't available until at least PLAYER_ALIVE, so if we don't have data
@@ -1809,9 +1829,28 @@ function HealComm:OnInitialize()
 	if( ResetChargeData ) then
 		HealComm.frame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
 	end
+	
+	-- Finally, register it all
+	self.frame:RegisterEvent("UNIT_SPELLCAST_SENT")
+	self.frame:RegisterEvent("UNIT_SPELLCAST_START")
+	self.frame:RegisterEvent("UNIT_SPELLCAST_STOP")
+	self.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
+	self.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+	self.frame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
+	self.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+	self.frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	self.frame:RegisterEvent("CHAT_MSG_ADDON")
+	self.frame:RegisterEvent("PLAYER_TALENT_UPDATE")
+	self.frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+	self.frame:RegisterEvent("PLAYER_TARGET_CHANGED")
+	self.frame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+	self.frame:RegisterEvent("SPELLS_CHANGED")
+	self.frame:RegisterEvent("GLYPH_ADDED")
+	self.frame:RegisterEvent("GLYPH_REMOVED")
+	self.frame:RegisterEvent("GLYPH_UPDATED")
+	self.frame:RegisterEvent("UNIT_PET")
+	self.frame:RegisterEvent("UNIT_AURA")
 
-	-- This resets the target timer next OnUpdate, the user would basically have to press the target button twice within
-	-- <0.10 seconds, more like <0.05 to be able to bug it out
 	self.resetFrame = self.resetFrame or CreateFrame("Frame")
 	self.resetFrame:Hide()
 	self.resetFrame:SetScript("OnUpdate", function(self)
@@ -1844,10 +1883,7 @@ end
 -- Event handler
 HealComm.frame = HealComm.frame or CreateFrame("Frame")
 HealComm.frame:UnregisterAllEvents()
-HealComm.frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 HealComm.frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-HealComm.frame:RegisterEvent("CHAT_MSG_ADDON")
-HealComm.frame:RegisterEvent("UNIT_AURA")
 HealComm.frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 HealComm.frame:RegisterEvent("RAID_ROSTER_UPDATE")
 HealComm.frame:SetScript("OnEvent", OnEvent)
@@ -1858,22 +1894,7 @@ if( playerClass ~= "DRUID" and playerClass ~= "PRIEST" and playerClass ~= "SHAMA
 	return
 end
 
-HealComm.frame:RegisterEvent("UNIT_SPELLCAST_SENT")
-HealComm.frame:RegisterEvent("UNIT_SPELLCAST_START")
-HealComm.frame:RegisterEvent("UNIT_SPELLCAST_STOP")
-HealComm.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
-HealComm.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
-HealComm.frame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
-HealComm.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
-HealComm.frame:RegisterEvent("PLAYER_TALENT_UPDATE")
-HealComm.frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-HealComm.frame:RegisterEvent("PLAYER_TARGET_CHANGED")
-HealComm.frame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
-HealComm.frame:RegisterEvent("SPELLS_CHANGED")
-HealComm.frame:RegisterEvent("GLYPH_ADDED")
-HealComm.frame:RegisterEvent("GLYPH_REMOVED")
-HealComm.frame:RegisterEvent("GLYPH_UPDATED")
-HealComm.frame:RegisterEvent("UNIT_PET")
+isHealerClass = true
 
 -- If the player is not logged in yet, then we're still loading and will watch for PLAYER_LOGIN to assume everything is initialized
 -- if we're already logged in then it was probably LOD loaded
