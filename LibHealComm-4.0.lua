@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 2
+local minor = 3
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -184,7 +184,7 @@ local function filterData(spells, filterGUID, bitFlag, time)
 					endTime = endTime > 0 and endTime or pending.endTime
 
 					-- Direct heals are easy, if they match the filter then return them
-					if( pending.bitType == DIRECT_HEALS and ( not time or endTime < time ) ) then
+					if( pending.bitType == DIRECT_HEALS and ( not time or endTime <= time ) ) then
 						healAmount = healAmount + amount
 					-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
 					-- this logic works well for the time being, but it needs to be changed to specifically calculate at what GetTime()
@@ -204,13 +204,25 @@ local function filterData(spells, filterGUID, bitFlag, time)
 	return healAmount
 end
 
--- Exposed function to do this
+-- Gets healing amount using the passed filters
 function HealComm:GetHealAmount(guid, bitFlag, time, casterGUID)
 	local amount = 0
 	if( casterGUID and pendingHeals[casterGUID] ) then
 		amount = filterData(pendingHeals[casterGUID], guid, bitFlag, time)
 	elseif( not casterGUID ) then
 		for _, spells in pairs(pendingHeals) do
+			amount = amount + filterData(spells, guid, bitFlag, time)
+		end
+	end
+	
+	return amount > 0 and amount or nil
+end
+
+-- Gets healing amounts for everyone except the player
+function HealComm:GetOtherHealAmount(guid, bitFlag, time)
+	local amount = 0
+	for casterGUID, spells in pairs(pendingHeals) do
+		if( casterGUID ~= playerGUID ) then
 			amount = amount + filterData(spells, guid, bitFlag, time)
 		end
 	end
@@ -1045,7 +1057,9 @@ function HealComm:UNIT_AURA(unit)
 	table.wipe(alreadyAdded)
 	
 	-- Class has a specific monitor it needs for auras
-	AuraHandler(guid, unit)
+	if( AuraHandler ) then
+		AuraHandler(guid, unit)
+	end
 end
 
 -- Monitor aura changes
