@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 4
+local minor = 5
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -505,6 +505,9 @@ local function loadPaladinData()
 	-- Divinity (Add)
 	local Divinity = GetSpellInfo(63646)
 	talentData[Divinity] = {mod = 0.01, current = 0}
+	-- Touched by the Light (Add?)
+	local TouchedbytheLight = GetSpellInfo(53592)
+	talentData[TouchedbytheLight] = {mod = 0.10, current = 0}
 	-- 100% of your heal on someone within range of your beacon heals the beacon target too
 	local BeaconofLight = GetSpellInfo(53563)
 	-- 100% chance to crit
@@ -512,8 +515,8 @@ local function loadPaladinData()
 	-- Seal of Light + Glyph = 5% healing
 	local SealofLight = GetSpellInfo(20165)
 	
-	-- Am I slightly crazy for adding level <40 glyphs? Yes!
-	local flashLibrams = {[42615] = 375, [42614] = 331, [42613] = 293, [42612] = 204, [25644] = 79, [23006] = 43, [23201] = 28}
+	-- Am I slightly crazy for adding level <40 relics? Yes!
+	local flashLibrams = {[42615] = 375, [42614] = 331, [42613] = 293, [42612] = 204, [28592] = 89, [25644] = 79, [23006] = 43, [23201] = 28}
 	local holyLibrams = {[45436] = 160, [40268] = 141, [28296] = 47}
 			
 	-- Need the GUID of whoever has beacon on them so we can make sure they are visible to us and so we can check the mapping
@@ -578,12 +581,12 @@ local function loadPaladinData()
 		-- Divine Favor, 100% chance to crit
 		if( hasDivineFavor ) then
 			hasDivineFavor = nil
-			healAmount = healAmount * 1.50
-		-- Or the player has over a 95% chance to crit with Holy spells
+			healAmount = healAmount * (1.50 + talentData[TouchedbytheLight].current)
+		-- Or the player has over a 100% chance to crit with Holy spells
 		elseif( GetSpellCritChance(2) >= 100 ) then
-			healAmount = healAmount * 1.50
+			healAmount = healAmount * (1.50 + talentData[TouchedbytheLight].current)
 		end
-	
+		
 		return DIRECT_HEALS, math.ceil(healAmount * playerHealModifier)
 	end
 end
