@@ -1349,7 +1349,7 @@ local function parseHotHeal(removeFirst, casterGUID, sender, spellID, tickAmount
 end
 
 -- Heal finished
-local function parseHealEnd(casterGUID, sender, spellID, ...)
+local function parseHealEnd(casterGUID, sender, spellID, interrupted, ...)
 	local spellName = GetSpellInfo(spellID)
 	if( not casterGUID or not spellName or not pendingHeals[casterGUID] ) then return end
 	
@@ -1387,7 +1387,7 @@ local function parseHealEnd(casterGUID, sender, spellID, ...)
 		
 	-- Double check and make sure we actually removed at least one person
 	if( #(tempPlayerList) > 0 ) then
-		HealComm.callbacks:Fire("HealComm_HealStopped", casterGUID, spellID, pending.bitType, unpack(tempPlayerList))
+		HealComm.callbacks:Fire("HealComm_HealStopped", casterGUID, spellID, pending.bitType, interrupted, unpack(tempPlayerList))
 		
 		-- Remove excess data if we have nothing else here
 		if( #(pending) == 0 ) then table.wipe(pending) end
@@ -1460,12 +1460,13 @@ function HealComm:CHAT_MSG_ADDON(prefix, message, channel, sender)
 	--- New updated somehow before ending - H:<extra>:<spellID>:<amount>:<tickInterval>:target1,target2,target3,target4,etc
 	elseif( commtype == "U" and arg1 and arg2 and arg3 and arg4 ) then
 		parseHotHeal(true, UnitGUID(sender), sender, spellID, tonumber(arg1), tonumber(arg2), tonumber(arg3), string.split(",", arg4))
-	--- Heal stopped - S:<extra>:<spellID>:target1,target2,target3,target4,etc
+	--- Heal stopped - S:<extra>:<spellID>:<ended early>:target1,target2,target3,target4,etc
 	elseif( commType == "S" ) then
-		if( arg1 and arg1 ~= "" ) then
-			parseHealEnd(UnitGUID(sender), sender, spellID, string.split(",", arg1))
+		local interrupted = arg1 == "1" and true or false
+		if( arg2 and arg2 ~= "" ) then
+			parseHealEnd(UnitGUID(sender), sender, spellID, interrupted, string.split(",", arg2))
 		else
-			parseHealEnd(UnitGUID(sender), sender, spellID)
+			parseHealEnd(UnitGUID(sender), sender, spellID, interrupted)
 		end
 	end
 end
@@ -1551,16 +1552,30 @@ function HealComm:UNIT_SPELLCAST_CHANNEL_START(...)
 	self:UNIT_SPELLCAST_START(...)
 end
 
+function HealComm:UNIT_SPELLCAST_SUCCEEDED(unit, spellName, spellRank, id)
+	if( unit ~= "player" or not spellData[spellName] or id ~= castID or id == 0 ) then return end
+	local nameID = spellName .. spellRank
+
+	castID = nil
+
+	sendMessage(string.format("S::%d:0", self.spellToID[nameID] or 0))
+	parseHealEnd(playerGUID, playerName, self.spellToID[nameID], false)
+end
+
 function HealComm:UNIT_SPELLCAST_STOP(unit, spellName, spellRank, id)
 	if( unit ~= "player" or not spellData[spellName] or id ~= castID ) then return end
 	local nameID = spellName .. spellRank
 	
-	sendMessage(string.format("S::%d", self.spellToID[nameID] or 0))
-	parseHealEnd(playerGUID, playerName, self.spellToID[nameID])
+	sendMessage(string.format("S::%d:1", self.spellToID[nameID] or 0))
+	parseHealEnd(playerGUID, playerName, self.spellToID[nameID], true)
 end
 
-function HealComm:UNIT_SPELLCAST_CHANNEL_STOP(...)
-	self:UNIT_SPELLCAST_STOP(...)
+function HealComm:UNIT_SPELLCAST_CHANNEL_STOP(unit, spellName, spellRank, id)
+	if( unit ~= "player" or not spellData[spellName] or id ~= castID ) then return end
+	local nameID = spellName .. spellRank
+
+	sendMessage(string.format("S::%d:0", self.spellToID[nameID] or 0))
+	parseHealEnd(playerGUID, playerName, self.spellToID[nameID], false)
 end
 
 -- Cast didn't go through, recheck any charge data if necessary
@@ -1850,6 +1865,7 @@ function HealComm:OnInitialize()
 	self.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
 	self.frame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
 	self.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+	self.frame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 	self.frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 	self.frame:RegisterEvent("CHAT_MSG_ADDON")
 	self.frame:RegisterEvent("PLAYER_TALENT_UPDATE")
