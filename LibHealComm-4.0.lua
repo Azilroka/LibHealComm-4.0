@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 3
+local minor = 4
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -966,9 +966,13 @@ local function updateDistributionChannel()
 		if( distribution ) then
 			HealComm.frame:RegisterEvent("CHAT_MSG_ADDON")
 			HealComm.frame:RegisterEvent("UNIT_AURA")
+			healComm.frame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
+			healComm.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 		else
 			HealComm.frame:UnregisterEvent("CHAT_MSG_ADDON")
 			HealComm.frame:UnregisterEvent("UNIT_AURA")
+			healComm.frame:UnregisterEvent("UNIT_SPELLCAST_DELAYED")
+			healComm.frame:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 		end
 	end
 end
@@ -1242,6 +1246,7 @@ local function parseDirectHeal(casterGUID, sender, spellID, amount, ...)
 	local pending = pendingHeals[casterGUID][spellName]
 	table.wipe(pending)
 	pending.endTime = endTime / 1000
+	pending.spellID = spellID
 	pending.bitType = DIRECT_HEALS
 
 	loadHealList(pending, amount, 1, 0, ...)
@@ -1265,6 +1270,7 @@ local function parseChannelHeal(casterGUID, sender, spellID, amount, totalTicks,
 	pending.endTime = endTime / 1000
 	pending.totalTicks = totalTicks
 	pending.tickInterval = (pending.endTime - pending.startTime) / totalTicks
+	pending.spellID = spellID
 	pending.bitType = CHANNEL_HEALS
 	
 	loadHealList(pending, amount, 1, 0, ...)
@@ -1314,6 +1320,7 @@ local function parseHotHeal(removeFirst, casterGUID, sender, spellID, tickAmount
 	pending.stacks = stack > 0 and stack or 1
 	pending.totalTicks = duration / tickInterval
 	pending.tickInterval = tickInterval
+	pending.spellID = spellID
 	pending.bitType = HOT_HEALS
 	
 	-- It's possible for a hot to be updated without fading, such as someone dispelling Lifebloom reducing it from 3 stacks to 1
@@ -1388,23 +1395,19 @@ local function parseHealEnd(casterGUID, sender, spellID, ...)
 end
 
 -- Heal delayed
-local function parseHealDelayed(casterGUID, sender, spellID)
-	local spellName = GetSpellInfo(spellID)
-	if( not casterGUID or not spellName or not pendingHeals[casterGUID] or not pendingHeals[casterGUID][spellName] ) then return end
-
+local function parseHealDelayed(casterGUID, startTime, endTime, spellName)
 	local pending = pendingHeals[casterGUID][spellName]
+	-- It's possible to get duplicate interrupted due to raid1 = party1, player = raid# etc etc, just block it here
+	if( pending.endTime == endTime and pending.startTime == startTime ) then return end
 	
 	-- Casted heal
 	if( pending.bitType == DIRECT_HEALS ) then
-		local endTime = select(6, UnitCastingInfo(sender))
-		if( not endTime ) then return end
-		pending.endTime = endTime / 1000
+		pending.startTime = startTime
+		pending.endTime = endTime
 	-- Channel heal
 	elseif( pending.bitType == CHANNEL_HEALS ) then
-		local startTime, endTime = select(5, UnitChannelInfo(sender))
-		if( not startTime or not endTime ) then return end
-		pending.startTime = startTime / 1000
-		pending.endTime = endTime / 1000
+		pending.startTime = startTime
+		pending.endTime = endTime
 		pending.tickInterval = (pending.endTime - pending.startTime)
 	else
 		return
@@ -1416,11 +1419,11 @@ local function parseHealDelayed(casterGUID, sender, spellID)
 		table.insert(tempPlayerList, pending[i])
 	end
 
-	HealComm.callbacks:Fire("HealComm_HealDelayed", casterGUID, spellID, pending.bitType, pending.endTime, unpack(tempPlayerList))
+	HealComm.callbacks:Fire("HealComm_HealDelayed", casterGUID, pending.spellID, pending.bitType, pending.endTime, unpack(tempPlayerList))
 end
 
--- DEBUG
 --[[
+-- DEBUG
 local Test = {}
 function Test:Dump(...)
 	print(...)
@@ -1464,9 +1467,6 @@ function HealComm:CHAT_MSG_ADDON(prefix, message, channel, sender)
 		else
 			parseHealEnd(UnitGUID(sender), sender, spellID)
 		end
-	--- Heal delayed - P:<extra>:<spellID>:target1,target2,target3,target4,etc
-	elseif( commType == "P" ) then
-		parseHealDelayed(UnitGUID(sender), sender, spellID)
 	end
 end
 
@@ -1570,12 +1570,24 @@ function HealComm:UNIT_SPELLCAST_INTERRUPTED(unit, spellName, spellRank, id)
 	ResetChargeData(castGUIDs[spellName .. spellRank], spellName, spellRank)
 end
 
+-- It's faster to do heal delays locally rather than through syncing, as it only has to go from WoW -> Player instead of Caster -> WoW -> Player
 function HealComm:UNIT_SPELLCAST_DELAYED(unit, spellName, spellRank, id)
-	if( unit ~= "player" or not spellData[spellName] or id ~= castID ) then return end
-	local nameID = spellName .. spellRank
+	local casterGUID = UnitGUID(unit)
+	if( unit == "focus" or unit == "target" or not pendingHeals[casterGUID] or not pendingHeals[casterGUID][spellName] ) then return end
 	
-	parseHealDelayed(playerGUID, playerName, self.spellToID[nameID])
-	sendMessage(string.format("P::%d", self.spellToID[nameID] or 0))
+	-- Direct heal delayed
+	if( pendingHeals[casterGUID][spellName].bitType == DIRECT_HEALS ) then
+		local startTime, endTime = select(5, UnitCastingInfo(unit))
+		if( startTime and endTime ) then
+			parseHealDelayed(casterGUID, startTime / 1000, endTime / 1000, spellName)
+		end
+	-- Channel heal delayed
+	elseif( pendingHeals[casterGUID][spellName].bitType == CHANNEL_HEALS ) then
+		local startTime, endTime = select(5, UnitChannelInfo(unit))
+		if( startTime and endTime ) then
+			parseHealDelayed(casterGUID, startTime / 1000, endTime / 1000, spellName)
+		end
+	end
 end
 
 function HealComm:UNIT_SPELLCAST_CHANNEL_UPDATE(...)
