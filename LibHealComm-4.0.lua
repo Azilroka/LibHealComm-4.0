@@ -969,13 +969,13 @@ local function updateDistributionChannel()
 		if( distribution ) then
 			HealComm.frame:RegisterEvent("CHAT_MSG_ADDON")
 			HealComm.frame:RegisterEvent("UNIT_AURA")
-			healComm.frame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
-			healComm.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+			HealComm.frame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
+			HealComm.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 		else
 			HealComm.frame:UnregisterEvent("CHAT_MSG_ADDON")
 			HealComm.frame:UnregisterEvent("UNIT_AURA")
-			healComm.frame:UnregisterEvent("UNIT_SPELLCAST_DELAYED")
-			healComm.frame:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+			HealComm.frame:UnregisterEvent("UNIT_SPELLCAST_DELAYED")
+			HealComm.frame:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 		end
 	end
 end
