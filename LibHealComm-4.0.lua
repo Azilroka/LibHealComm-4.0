@@ -315,7 +315,7 @@ local function loadDruidData()
 	
 	-- Rejuvenation
 	local Rejuvenation = GetSpellInfo(774)
-	--hotData[Rejuvenation] = {level = {4, 10, 16, 22, 28, 34, 40, 46, 52, 58, 60, 63, 69, 75, 80}, interval = 3}
+	--hotData[Rejuvenation] = {4, 10, 16, 22, 28, 34, 40, 46, 52, 58, 60, 63, 69, 75, 80, interval = 3}
 
 	--[[
 	-- Lifebloom, another fun spell. How do you consider the bloom, would that be considered a normal heal at the end? Maybe
@@ -354,15 +354,16 @@ local function loadDruidData()
 	-- Genesis (Add)
 	local Genesis = GetSpellInfo(57810)
 	talentData[Genesis] = {mod = 0.01, current = 0}
+	-- Improved Rejuvenation (Add)
+	local ImprovedRejuv = GetSpellInfo(17111)
+	talentData[ImprovedRejuv] = {mod = 0.05, current = 0}
+	
 	
 	--[[
 		Idols
 		
 		40711 - Idol of Lush Moss, 125 LB per tick SP
-		36366 - Idol of Pure Thoughts, +33 SP per Rejuv tick
 		27886 - Idol of the Emerald Queen, +47 per LB Tick
-		25643 - Harold's Rejuvenation Broach, +86 Rejuv total
-		22398 - Idol of rejuvenation, +50 SP to Rejuv
 	]]
 	
 	baseHealingRelics = {[28568] = HealingTouch, [22399] = HeaingTouch}
@@ -406,24 +407,53 @@ local function loadDruidData()
 	
 	-- Calculate hot heals
 	CalculateHotHealing = function(guid, spellID)
+		--[[
 		local spellName, spellRank = GetSpellInfo(spellID)
 		local healAmount = HealComm.averageHeal[spellName .. spellRank]
 		local spellPower = GetSpellBonusHealing()
 		local multiModifier, addModifier = 1, 1
 		local rank = HealComm.rankNumbers[spellRank]
 		
+		addModifier = addModifier + talentData[GiftofNature].current
+		addModifier = addModifier + talentData[Genesis].current
+		
 		-- Master Shapeshifter does not apply directly when using Lifebloom
 		if( unitHasAura("player", TreeofLife) ) then
-			multiModifier = multiModifier * (1 + talentData[MasterShapeshifter].current)
+			addModiifer = addModifier + talentData[MasterShapeshifter].current
 			
 			-- 32387 - Idol of the Raven Godess, +44 SP while in TOL
 			if( playerCurrentRelic == 32387 ) then
 				spellPower = spellPower + 44
 			end
 		end
-		
-		
-		return HOT_HEALS, 2000, hotData[spellName].interval
+
+		if( spellName == Rejuvenation ) then
+			addModifier = addModifier + talentData[ImprovedRejuv].current
+
+			-- 25643 - Harold's Rejuvenation Broach, +86 Rejuv SP
+			if( playerCurrentRelic == 25643 ) then
+				spellPower = spellPower + 86
+			-- 22398 - Idol of Rejuvenation, +50 SP to Rejuv
+			elseif( playerCurrentRelic == 22398 ) then
+				spellPower = spellPower + 50
+			end
+			
+			local duration = rank > 14 and 15 or 12
+			local ticks = (duration / hotData[spellName].interval)
+			
+			spellPower = spellPower * (((duration / 15) * 1.88) * (1 + (talentData[EmpoweredRejuv].current * 2)))
+			--spellPower = spellPower / ticks
+			
+			--38366 - Idol of Pure Thoughts, +33 SP base per tick
+			if( playerCurrentRelic == 38366 ) then
+				spellPower = spellPower + 33
+			end
+
+			healAmount = calculateGeneralAmount(hotData[spellName][rank], healAmount, spellPower, multiModifier, addModifier)
+			healAmount = healAmount / ticks
+		end
+		]]
+		--return HOT_HEALS, healAmount, hotData[spellName].interval
 	end
 	
 	-- Calcualte direct and channeled heals
