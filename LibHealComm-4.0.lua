@@ -1858,7 +1858,7 @@ local function clearGUIDData()
 	table.wipe(decompressGUID)
 	
 	-- Reset our mappings
-	HealComm.guidToUnit, HealComm.guidToGroup = {[playerGUID] = "player"}, {}
+	HealComm.guidToUnit, HealComm.guidToGroup = {[UnitGUID("player")] = "player"}, {}
 	guidToUnit, guidToGroup = HealComm.guidToUnit, HealComm.guidToGroup
 	
 	-- And also reset all pending data
@@ -1892,7 +1892,7 @@ function HealComm:PARTY_MEMBERS_CHANGED()
 	end
 	
 	-- Because parties do not have "real" groups, we will simply pretend they are all in group 0
-	guidToGroup[playerGUID] = 0
+	guidToGroup[UnitGUID("player")] = 0
 	
 	for i=1, MAX_PARTY_MEMBERS do
 		local unit = "party" .. i
