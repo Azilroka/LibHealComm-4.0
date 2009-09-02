@@ -185,24 +185,41 @@ local function filterData(spells, filterGUID, bitFlag, time)
 	
 	for _, pending in pairs(spells) do
 		if( pending.bitType and bit.band(pending.bitType, bitFlag) > 0 ) then
-			for i=1, #(pending), 3 do
+			for i=1, #(pending), 4 do
 				local guid = pending[i]
 				if( guid == filterGUID ) then
 					local amount = pending[i + 1]
-					local endTime = pending[i + 2]
+					local endTime = pending[i + 3]
 					endTime = endTime > 0 and endTime or pending.endTime
 
 					-- Direct heals are easy, if they match the filter then return them
 					if( pending.bitType == DIRECT_HEALS and ( not time or endTime <= time ) ) then
 						healAmount = healAmount + amount
 					-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
-					-- this logic works well for the time being, but it needs to be changed to specifically calculate at what GetTime()
-					-- each tick happens, because if the next tick is in 0.50s and we want the next 0.75s, then it will be wrong
+					-- This has to calculate when the next tick happens, because if you want the nex 0.75s and the next tick is in 0.50s then you need to know.
 					elseif( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) then
-						local timeBand = math.min(time and time - currentTime or math.huge, endTime - GetTime())
-						if( timeBand > 0 and timeBand >= pending.tickInterval ) then
-							local ticks = math.floor((timeBand / pending.tickInterval) + 0.5)
-							healAmount = healAmount + (amount * ticks)
+						local secondsLeft = endTime - GetTime()
+						if( not time ) then
+							healAmount = healAmount + amount * math.floor(secondsLeft / pending.tickInterval)
+						elseif( secondsLeft > 0 ) then
+							--[[
+								Next 3.75 seconds, Lifebloom, last ticked 0.10 seconds ago
+								
+								0.90 seconds = tick
+								1.90 seconds = tick
+								2.90 seconds = tick
+								3.75 second time band hit, done.
+								3.90 seconds = tick
+							]]
+							-- I know there is a better way of doing this, but I am completely blanking on how
+							local bandSeconds = math.min(time - GetTime(), secondsLeft)
+							local nextTickIn = pending.tickInterval - (pending.duration - secondsLeft)
+
+							local seconds = nextTickIn <= 0 and pending.tickInterval or nextTickIn
+							repeat
+								healAmount = healAmount + amount
+								seconds = seconds + pending.tickInterval
+							until( seconds > bandSeconds )
 						end
 					end
 				end
@@ -405,7 +422,6 @@ local function loadDruidData()
 		local spellPower = GetSpellBonusHealing()
 		local multiModifier, addModifier = 1, 1
 		local rank = HealComm.rankNumbers[spellRank]
-		local ticks = 1
 		
 		addModifier = addModifier + talentData[GiftofNature].current
 		multiModifier = multiModifier * (1 + talentData[Genesis].current)
@@ -432,7 +448,7 @@ local function loadDruidData()
 			end
 			
 			local duration = rank > 14 and 15 or 12
-			ticks = duration / hotData[spellName].interval
+			local ticks = duration / hotData[spellName].interval
 			
 			spellPower = spellPower * (((duration / 15) * 1.88) * (1 + (talentData[EmpoweredRejuv].current)))
 			spellPower = spellPower / ticks
@@ -444,7 +460,7 @@ local function loadDruidData()
 			end
 		elseif( spellName == Lifebloom ) then
 			-- 7 second base duration, 1 second ticks
-			ticks = 7
+			local ticks = 7
 			
 			local coeff = (hotData[spellName].coeff * (1 + (talentData[EmpoweredRejuv].current)))
 			spellPower = spellPower * coeff
@@ -675,6 +691,10 @@ local function loadPriestData()
 	local LesserHeal = GetSpellInfo(2050)
 	spellData[LesserHeal] = {1, 4, 20}
 	
+	-- Hot data
+	local Renew = GetSpellInfo(139)
+	hotData[Renew] = {8, 14, 20, 26, 32, 38, 44, 50, 56, 60, 65, 70, 75, 80, interval = 3}
+	
 	-- Talent data
 	local Grace = GetSpellInfo(47517)
 	-- Spiritual Healing (Add)
@@ -692,6 +712,15 @@ local function loadPriestData()
 	-- Divine Providence (Add)
 	local DivineProvidence = GetSpellInfo(47567)
 	talentData[DivineProvidence] = {mod = 0.02, current = 0}
+	-- Improved Renew (Add)
+	local ImprovedRenew = GetSpellInfo(14908)
+	talentData[ImprovedRenew] = {step = 0.05, current = 0}
+	-- Empowered Renew (Multi, spell power)
+	local EmpoweredRenew = GetSpellInfo(63534)
+	talentData[EmpoweredRenew] = {step = 0.05, current = 0}
+	-- Twin Disciplines (Add)
+	local TwinDisciplines = GetSpellInfo(47586)
+	talentData[TwinDisciplines] = {step = 0.01, current = 0}
 	
 	-- Keep track of who has grace on them
 	local activeGraceGUID, activeGraceModifier
@@ -725,6 +754,41 @@ local function loadPriestData()
 		return compressGUID[guid], healAmount
 	end
 	
+	CalculateHotHealing = function(guid, spellID)
+		local spellName, spellRank = GetSpellInfo(spellID)
+		local healAmount = HealComm.averageHeal[spellName .. spellRank]
+		local spellPower = GetSpellBonusHealing()
+		local multiModifier, addModifier = 1, 1
+		local rank = HealComm.rankNumbers[spellRank]
+
+		-- Add grace if it's active on them
+		if( activeGraceGUID == guid ) then
+			addModifier = addModifier + activeGraceModifier
+		end
+		
+		addModifier = addModifier + talentData[FocusedPower].current
+		addModifier = addModifier + talentData[BlessedResilience].current
+		multiModifier = multiModifier * (1 + talentData[SpiritualHealing].current)
+		
+		if( spellName == Renew ) then
+			addModifier = addModifier + talentData[ImprovedRenew].current
+			addModifier = addModifier + talentData[TwinDisciplines].current
+			
+			-- Glyph of Renew, one less tick for +25% healing per tick. Given that this is supposed to keep each tick the same just heal faster, I assume this is an additive modifier
+			if( glyphCache[55674] ) then
+				addModifier = addModifier + 0.25
+			end
+			
+			
+			spellPower = spellPower * (((duration / 15) * 1.88) * (1 + (talentData[EmpoweredRenew].current)))
+			spellPower = spellPower / ticks
+			healAmount = healAmount / ticks
+		end
+
+		healAmount = calculateGeneralAmount(hotData[spellName][rank], healAmount, spellPower, multiModifier, addModifier)
+		return HOT_HEALS, healAmount, hotData[spellName].interval
+	end
+
 	-- If only every other class was as easy as Paladins
 	CalculateHealing = function(guid, spellName, spellRank)
 		local healAmount = HealComm.averageHeal[spellName .. spellRank]
@@ -1062,11 +1126,12 @@ function HealComm:ZONE_CHANGED_NEW_AREA()
 		local time = GetTime()
 		for _, spellList in pairs(self.pendingHeals) do
 			for _, spell in pairs(spellList) do
-				for i=#(spell), 1, -3 do
+				for i=#(spell), 1, -4 do
 					if( spell[i] <= time ) then
 						table.remove(spell, i)
 						table.remove(spell, i - 1)
 						table.remove(spell, i - 2)
+						table.remove(spell, i - 3)
 					end
 				end
 			end
@@ -1256,21 +1321,29 @@ local function loadHealList(pending, amount, stack, endTime, ...)
 		amount = amount * stack
 		
 		for i=1, select("#", ...) do
-			local guid = decompressGUID[select(i, ...)]
-			table.insert(pending, guid)
-			table.insert(pending, amount)
-			table.insert(pending, endTime)
-			table.insert(tempPlayerList, guid)
-			
-			pending[guid] = endTime
+			local guid = select(i, ...)
+			if( guid ) then
+				guid = decompressGUID[guid]
+				
+				table.insert(pending, guid)
+				table.insert(pending, amount)
+				table.insert(pending, stack)
+				table.insert(pending, endTime)
+				table.insert(tempPlayerList, guid)
+				
+				pending[guid] = endTime
+			end
 		end
 	elseif( amount == -1 ) then
 		for i=1, select("#", ...), 2 do
-			local guid = decompressGUID[select(i, ...)]
+			local guid = select(i, ...)
 			local amount = tonumber((select(i + 1, ...)))
-			if( amount ) then
+			if( guid and amount ) then
+				guid = decompressGUID[guid]
+				
 				table.insert(pending, guid)
 				table.insert(pending, amount * stack)
+				table.insert(pending, stack)
 				table.insert(pending, endTime)
 				table.insert(tempPlayerList, guid)
 
@@ -1341,7 +1414,7 @@ local function findAura(casterGUID, spellName, spellRank, inc, ...)
 				if( not name ) then break end
 				
 				if( name == spellName and spellRank == rank and caster and UnitGUID(caster) == casterGUID ) then
-					return stack or 1, duration, endTime
+					return (stack and stack > 0 and stack or 1), duration, endTime
 				end
 
 				id = id + 1
@@ -1366,7 +1439,6 @@ local function parseHotHeal(casterGUID, sender, wasUpdated, spellID, tickAmount,
 	local pending = pendingHeals[casterGUID][spellID]
 	pending.duration = duration
 	pending.endTime = endTime
-	pending.stacks = stack > 0 and stack or 1
 	pending.totalTicks = duration / tickInterval
 	pending.tickInterval = tickInterval
 	pending.spellID = spellID
@@ -1382,11 +1454,12 @@ local function parseHotHeal(casterGUID, sender, wasUpdated, spellID, tickAmount,
 		if( pending[guid] ) then
 			pending[guid] = nil
 			
-			for i=#(pending), 1, -3 do
-				if( pending[i - 2] == guid ) then
+			for i=#(pending), 1, -4 do
+				if( pending[i - 3] == guid ) then
 					table.remove(pending, i)
 					table.remove(pending, i - 1)
 					table.remove(pending, i - 2)
+					table.remove(pending, i - 3)
 				end
 			end
 				
@@ -1396,7 +1469,7 @@ local function parseHotHeal(casterGUID, sender, wasUpdated, spellID, tickAmount,
 	
 	
 	-- As you can't rely on a hot being the absolutely only one up, have to apply the total amount now :<
-	loadHealList(pending, tickAmount, pending.stacks, pending.endTime, ...)
+	loadHealList(pending, tickAmount, stack, pending.endTime, ...)
 	
 	if( not wasUpdated ) then
 		HealComm.callbacks:Fire("HealComm_HealStarted", casterGUID, spellID, pending.bitType, pending.endTime, unpack(tempPlayerList))
@@ -1418,10 +1491,11 @@ local function parseHealEnd(casterGUID, sender, spellID, interrupted, ...)
 	
 	-- Remove all players associated with this
 	if( select("#", ...) == 0 ) then
-		for i=#(pending), 1, -3 do
+		for i=#(pending), 1, -4 do
 			table.remove(pending, i)
 			table.remove(pending, i - 1)
-			local guid = table.remove(pending, i - 2)
+			table.remove(pending, i - 2)
+			local guid = table.remove(pending, i - 3)
 			table.insert(tempPlayerList, guid)
 		end
 		
@@ -1431,12 +1505,13 @@ local function parseHealEnd(casterGUID, sender, spellID, interrupted, ...)
 			table.insert(tempPlayerList, decompressGUID[select(i, ...)])
 		end
 		
-		for i=#(pending), 1, -3 do
+		for i=#(pending), 1, -4 do
 			for _, guid in pairs(tempPlayerList) do
-				if( pending[i - 2] == guid ) then
+				if( pending[i - 3] == guid ) then
 					table.remove(pending, i)
 					table.remove(pending, i - 1)
 					table.remove(pending, i - 2)
+					table.remove(pending, i - 3)
 					
 					pending[guid] = nil
 				end
@@ -1474,7 +1549,7 @@ local function parseHealDelayed(casterGUID, startTime, endTime, spellName)
 
 	table.wipe(tempPlayerList)
 
-	for i=1, #(pending), 3 do
+	for i=1, #(pending), 4 do
 		table.insert(tempPlayerList, pending[i])
 	end
 
@@ -1516,7 +1591,7 @@ function HealComm:CHAT_MSG_ADDON(prefix, message, channel, sender)
 	--- New hot - H:<extra>:<spellID>:<amount>:<isMulti>:<tickInterval>:target1,target2,target3,target4,etc
 	elseif( commType == "H" and arg1 and arg5 ) then
 		parseHotHeal(UnitGUID(sender), sender, false, spellID, tonumber(arg1), tonumber(arg3), tonumber(arg4), string.split(",", arg5))
-	--- New updated heal somehow before ending - H:<extra>:<spellID>:<amount>:<tickInterval>:target1,target2,target3,target4,etc
+	--- New updated heal somehow before ending - U:<extra>:<spellID>:<amount>:<tickInterval>:target1,target2,target3,target4,etc
 	elseif( commtype == "U" and arg1 and arg4 ) then
 		parseHotHeal(UnitGUID(sender), sender, true, spellID, tonumber(arg1), tonumber(arg2), tonumber(arg3), string.split(",", arg4))
 	--- Heal stopped - S:<extra>:<spellID>:<ended early>:target1,target2,target3,target4,etc
@@ -1540,6 +1615,7 @@ if( isHealerClass ) then
 	eventRegistered["SPELL_AURA_REMOVED"] = true
 	eventRegistered["SPELL_AURA_APPLIED"] = true
 	eventRegistered["SPELL_CAST_SUCCESS"] = true
+	eventRegistered["SPELL_AURA_REMOVED_DOSE"] = true
 end
 
 -- Some heals like Tranquility hit multiple people, and firing 5 events * ticks is inefficient, instead if we expect them
@@ -1581,6 +1657,7 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 				HealComm.callbacks:Fire("HealComm_HealUpdated", sourceGUID, spellID, pending.bitType, pending[destGUID], destGUID)
 			end
 		end
+		
 	-- Cast succesful
 	elseif( eventType == "SPELL_CAST_SUCCESS" and bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) == COMBATLOG_OBJECT_AFFILIATION_MINE and bit.band(destFlags, CAN_HEAL) > 0 ) then
 		local spellID, spellName, spellSchool = ...
@@ -1599,6 +1676,32 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 			playerModifiers[spellID] = selfModifiers[spellID]
 			recalculatePlayerModifiers()
 		end
+	-- Single stack of a hot was removed, this only applies when going from 2 -> 1, when it goes from 1 -> 0 it fires
+	-- SPELL_AURA_REMOVED
+	elseif( eventType == "SPELL_AURA_REMOVED_DOSE" and bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) == COMBATLOG_OBJECT_AFFILIATION_MINE ) then
+		local spellID, spellName, spellSchool, auraType, stacks = ...
+		--print(sourceName, sourceGUID, destName, destGUID, spellName, auraType, stacks)
+		
+		local pending = sourceGUID and pendingHeals[sourceGUID] and pendingHeals[sourceGUID][spellID]
+		if( pending ) then
+			--print(UnitAura("player", spellName))
+			
+			local amount
+			for i=1, #(pending), 4 do
+				if( pending[i] == destGUID ) then
+					--print("Found", pending[i + 1])
+					amount = pending[i + 1]
+					break
+				end
+			end
+			
+			--print("Proceeding", amount, pending.tickInterval)
+			if( amount ) then
+				parseHotHeal(sourceGUID, sourceName, true, spellID, amount, pending.tickInterval, destGUID)
+				sendMessage(string.format("U::%d:%d:%d:%s", spellID, amount, pending.tickInterval, destGUID))
+			end
+		end
+
 	-- Aura faded		
 	elseif( eventType == "SPELL_AURA_REMOVED" ) then
 		local spellID, spellName, spellSchool, auraType = ...
