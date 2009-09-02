@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 7
+local minor = 8
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -196,21 +196,30 @@ local function filterData(spells, filterGUID, bitFlag, time)
 					if( pending.bitType == DIRECT_HEALS and ( not time or endTime <= time ) ) then
 						healAmount = healAmount + amount
 					-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
-					-- This has to calculate when the next tick happens, because if you want the nex 0.75s and the next tick is in 0.50s then you need to know.
 					elseif( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) then
 						local secondsLeft = endTime - GetTime()
 						if( not time ) then
 							healAmount = healAmount + amount * math.floor(secondsLeft / pending.tickInterval)
 						elseif( secondsLeft > 0 ) then
 							--[[
-								Next 3.75 seconds, Lifebloom, last ticked 0.10 seconds ago
+								This is necessary to make sure we get the correct amount of ticks.
 								
-								0.90 seconds = tick
-								1.90 seconds = tick
-								2.90 seconds = tick
-								3.75 second time band hit, done.
-								3.90 seconds = tick
+								Here's what would happen if we assume that Lifebloom will tick exactly every 1 second from the time the function is called:
+								
+								1s = tick
+								2s = tick
+								Hit time band, only ticking twice in 2.30 seconds.
+								
+								When in reality Lifebloom is ticking 0.20s ahead of the call, so it's really:
+								
+								0.20s = tick
+								1.20s = tick
+								2.20s = tick
+								Hit time band, ticked three times in 2.30 seconds.
+								
+								This comes up when you have multiple hots triggering healing updates, Rejuvenation can fire an update then 0.50s later Lifebloom ticks and so on.
 							]]
+							
 							-- I know there is a better way of doing this, but I am completely blanking on how
 							local bandSeconds = math.min(time - GetTime(), secondsLeft)
 							local nextTickIn = pending.tickInterval - (pending.duration - secondsLeft)
@@ -400,16 +409,16 @@ local function loadDruidData()
 	GetHealTargets = function(guid, healAmount, spellName, spellRank)
 		-- Tranquility pulses on everyone within 30 yards, if they are in range of Innervate they'll get Tranquility
 		if( spellName == Tranquility ) then
-			local list = compressGUID[guid]
+			local targets = compressGUID[playerGUID]
+			local playerGroup = guidToGroup[playerGUID]
 			
-			local group = guidToGroup[guid]
 			for groupGUID, id in pairs(guidToGroup) do
-				if( guid ~= groupGUID and IsSpellInRange(Innervate, guidToUnit[groupGUID]) == 1 ) then
-					list = list .. "," .. compressGUID[groupGUID]
+				if( id == playerGroup and playerGUID ~= groupGUID and IsSpellInRange(Innervate, guidToUnit[groupGUID]) == 1 ) then
+					targets = targets .. "," .. compressGUID[groupGUID]
 				end
 			end
 			
-			return list, healAmount
+			return targets, healAmount
 		end
 		
 		return compressGUID[guid], healAmount
@@ -739,16 +748,16 @@ local function loadPriestData()
 		if( spellName == BindingHeal ) then
 			return string.format("%s,%s", compressGUID[guid], compressGUID[playerGUID]), healAmount
 		elseif( spellName == PrayerofHealing ) then
-			local list = compressGUID[guid]
-			
+			local targets = compressGUID[guid]
 			local group = guidToGroup[guid]
+			
 			for groupGUID, id in pairs(guidToGroup) do
-				if( guid ~= groupGUID and UnitIsVisible(guidToUnit[groupGUID]) ) then
-					list = list .. "," .. compressGUID[groupGUID]
+				if( id == group and guid ~= groupGUID and UnitIsVisible(guidToUnit[groupGUID]) ) then
+					targets = targets .. "," .. compressGUID[groupGUID]
 				end
 			end
 			
-			return list, healAmount
+			return targets, healAmount
 		end
 		
 		return compressGUID[guid], healAmount
@@ -865,8 +874,11 @@ local function loadShamanData()
 	local LesserHealingWave = GetSpellInfo(8004)
 	spellData[LesserHealingWave] = {20, 28, 36, 44, 52, 60, 66, 72, 77, coeff = 1.5 / 3.5}
 	
-	-- Talent data
+	-- Hot data
 	local Riptide = GetSpellInfo(61295)
+	hotData[Riptide] = {60, 70, 75, 80, interval = 3, coeff = 0.50 * 1.88}
+	
+	-- Talent data
 	local EarthShield = GetSpellInfo(49284)
 	-- Improved Chain Heal (Multi)
 	local ImpChainHeal = GetSpellInfo(30872)
@@ -877,30 +889,30 @@ local function loadShamanData()
 	-- Healing Way (Multi, this goes from 8 -> 16 -> 25 so have to manually do the conversion)
 	local HealingWay = GetSpellInfo(29206)
 	talentData[HealingWay] = {mod = 0, current = 0}
-	-- Purification (Add/Multi)
+	-- Purification (Add)
 	local Purification = GetSpellInfo(16178)
 	talentData[Purification] = {mod = 0.02, current = 0}
 	
 	-- Set bonuses
 	-- T7 Resto 4 piece, +5% healing on Chain Heal and Healing Wave
 	itemSetsData["T7 Resto"] = {40508, 40509, 40510, 40512, 40513, 39583, 39588, 39589, 39590, 39591}
+	-- T9 Resto 2 piece, +20% healing to Riptide
+	itemSetsData["T9 Resto"] = {48280, 48281, 48282, 48283, 48284, 48295, 48296, 48297, 48298, 48299, 48301, 48302, 48303, 48304, 48300, 48306, 48307, 48308, 48309, 48305, 48286, 48287, 48288, 48289, 48285, 48293, 48292, 48291, 48290, 48294}
 	
 	-- Totems
 	local lhwTotems = {[42598] = 320, [42597] = 267, [42596] = 236, [42595] = 204, [25645] = 79, [22396] = 80, [23200] = 53}	
 	baseHealingRelics = {[45114] = ChainHeal, [38368] = ChainHeal, [28523] = ChainHeal}
 	
 	-- Keep track of who has riptide on them
-	local riptideData, earthshieldGUID = {}
+	local riptideData, earthshieldList = {}, {}
 	AuraHandler = function(guid, unit)
 		riptideData[guid] = unitHasAura(unit, Riptide) and true or nil
 		
-		-- Currently, Glyph of Lesser Healing Wave + Any Earth Shield increase the healing
-		-- not just the players
-		--if( unitHasAura(unit, EarthShield) ) then
+		-- Currently, Glyph of Lesser Healing Wave + Any Earth Shield increase the healing not just the players own
 		if( UnitBuff(unit, EarthShield) ) then
-			earthshieldGUID = guid
-		elseif( earthshieldGUID ) then
-			earthshieldGUID = nil
+			earthshieldList[guid] = true
+		elseif( earthshieldList[guid] ) then
+			earthshieldList[guid] = nil
 		end
 	end
 	
@@ -918,6 +930,31 @@ local function loadShamanData()
 	
 		return compressGUID[guid], healAmount
 	end
+	
+	CalculateHotHealing = function(guid, spellID)
+		local spellName, spellRank = GetSpellInfo(spellID)
+		local healAmount = HealComm.averageHeal[spellName .. spellRank]
+		local spellPower = GetSpellBonusHealing()
+		local multiModifier, addModifier = 1, 1
+		local rank = HealComm.rankNumbers[spellRank]
+
+		addModifier = addModifier + talentData[Purification].current
+		
+		if( spellName == Riptide ) then
+			if( equippedSetPieces["T9 Resto"] >= 2 ) then
+				multiModifier = multiModifier * 1.20
+			end
+			
+			local ticks = 15 / hotData[spellName].interval
+			spellPower = spellPower * (hotData[spellName].coeff * 1.88)
+			spellPower = spellPower / ticks
+			healAmount = healAmount / ticks
+		end
+		
+		healAmount = calculateGeneralAmount(hotData[spellName][rank], healAmount, spellPower, multiModifier, addModifier)
+		return HOT_HEALS, healAmount, hotData[spellName].interval
+	end
+
 	
 	-- If only every other class was as easy as Paladins
 	CalculateHealing = function(guid, spellName, spellRank)
@@ -963,7 +1000,7 @@ local function loadShamanData()
 		-- Lesser Healing Wave
 		elseif( spellName == LesserHealingWave ) then
 			-- Glyph of Lesser Healing Wave, +20% healing on LHW if target has ES up
-			if( glyphCache[55438] and earthshieldGUID == guid ) then
+			if( glyphCache[55438] and earthshieldGUID[guid] ) then
 				multiModifier = multiModifier * 1.20
 			end
 			
@@ -1383,10 +1420,10 @@ local function parseChannelHeal(casterGUID, sender, spellID, amount, totalTicks,
 	if( not startTime or not endTime ) then return end
 
 	pendingHeals[casterGUID] = pendingHeals[casterGUID] or {}
-	pendingHeals[casterGUID][spellID] = pendingHeals[casterGUID][spellID] or {}
+	pendingHeals[casterGUID][spellName] = pendingHeals[casterGUID][spellname] or {}
 
 	local inc = amount == -1 and 2 or 1
-	local pending = pendingHeals[casterGUID][spellID]
+	local pending = pendingHeals[casterGUID][spellName]
 	table.wipe(pending)
 	pending.startTime = startTime / 1000
 	pending.endTime = endTime / 1000
@@ -1394,7 +1431,7 @@ local function parseChannelHeal(casterGUID, sender, spellID, amount, totalTicks,
 	pending.totalTicks = totalTicks
 	pending.tickInterval = (pending.endTime - pending.startTime) / totalTicks
 	pending.spellID = spellID
-	pending.isMutliTarget = (select("#", ...) / inc) > 1
+	pending.isMultiTarget = (select("#", ...) / inc) > 1
 	pending.bitType = CHANNEL_HEALS
 	
 	loadHealList(pending, amount, 1, 0, ...)
@@ -1499,6 +1536,8 @@ local function parseHealEnd(casterGUID, sender, spellID, interrupted, ...)
 			table.remove(pending, i - 2)
 			local guid = table.remove(pending, i - 3)
 			table.insert(tempPlayerList, guid)
+			
+			pending[guid] = nil
 		end
 		
 	-- Have to remove a specific list of people, only really necessary for hots which can have multiple entries, but different end times
@@ -1523,10 +1562,11 @@ local function parseHealEnd(casterGUID, sender, spellID, interrupted, ...)
 		
 	-- Double check and make sure we actually removed at least one person
 	if( #(tempPlayerList) > 0 ) then
-		HealComm.callbacks:Fire("HealComm_HealStopped", casterGUID, spellID, pending.bitType, interrupted, unpack(tempPlayerList))
-		
+		local bitType = pending.bitType
 		-- Remove excess data if we have nothing else here
 		if( #(pending) == 0 ) then table.wipe(pending) end
+
+		HealComm.callbacks:Fire("HealComm_HealStopped", casterGUID, spellID, bitType, interrupted, unpack(tempPlayerList))
 	end
 end
 
@@ -1622,6 +1662,7 @@ end
 
 -- Some heals like Tranquility hit multiple people, and firing 5 events * ticks is inefficient, instead if we expect them
 -- to be hitting multiple people they'll be saved until the next frame update
+-- Bucketing needs some work, I am probably going to move it to a slightly more abstract system so I can use it for things like aura modifiers too
 HealComm.bucketHeals = HealComm.bucketHeals or {}
 local bucketHeals = HealComm.bucketHeals
 
@@ -1632,8 +1673,8 @@ HealComm.bucketFrame:SetScript("OnUpdate", function(self, elapsed)
 	for casterGUID, spells in pairs(bucketHeals) do
 		for spellID, targetGUIDs in pairs(spells) do
 			if( #(targetGUIDs) > 0 ) then
-				local pending = bucketHeals[sourceGUID][spellID]
-				HealComm.callbacks:Fire("HealComm_HealUpdated", casterGUID, spellID, pending.bitType, pending[targetGUIDs[1]], unpack(targetGUIDs))
+				local pending = pendingHeals[casterGUID][spellID] or pendingHeals[casterGUID][GetSpellInfo(spellID)]
+				HealComm.callbacks:Fire("HealComm_HealUpdated", casterGUID, pending.spellID, pending.bitType, pending[targetGUIDs[1]], unpack(targetGUIDs))
 				
 				table.wipe(targetGUIDs)
 			end
@@ -1641,14 +1682,17 @@ HealComm.bucketFrame:SetScript("OnUpdate", function(self, elapsed)
 	end
 end)	
 
+local OVERTIME_HEALS = bit.bor(HOT_HEALS, CASTED_HEALS)
 function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags, ...)
 	if( not eventRegistered[eventType] ) then return end
 	
 	-- Heal or hot ticked that we have data on
+	-- this is a logic update because it's more efficient (especially with 20 hots going) to keep track of it logically
+	-- rather than spamming the comm channel whenever a hot ticks.
 	if( eventType == "SPELL_HEAL" or eventType == "SPELL_PERIODIC_HEAL" ) then
-		local spellID = ...
-		local pending = sourceGUID and pendingHeals[sourceGUID] and pendingHeals[sourceGUID][spellID]
-		if( pending and pending[destGUID] ) then
+		local spellID, spellName = ...
+		local pending = sourceGUID and pendingHeals[sourceGUID] and (pendingHeals[sourceGUID][spellID] or pendingHeals[sourceGUID][spellName])
+		if( pending and pending[destGUID] and pending.bitType and bit.band(pending.bitType, OVERTIME_HEALS) > 0 ) then
 			if( pending.isMultiTarget ) then
 				bucketHeals[sourceGUID] = bucketHeals[sourceGUID] or {}
 				bucketHeals[sourceGUID][spellID] = bucketHeals[sourceGUID][spellID] or {}
@@ -1699,8 +1743,8 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 			
 			--print("Proceeding", amount, pending.tickInterval)
 			if( amount ) then
-				parseHotHeal(sourceGUID, sourceName, true, spellID, amount, pending.tickInterval, destGUID)
-				sendMessage(string.format("U::%d:%d:%d:%s", spellID, amount, pending.tickInterval, destGUID))
+				parseHotHeal(sourceGUID, sourceName, true, spellID, amount, pending.tickInterval, compressGUID[destGUID])
+				sendMessage(string.format("U::%d:%d:%d:%s", spellID, amount, pending.tickInterval, compressGUID[destGUID]))
 			end
 		end
 
@@ -2008,7 +2052,7 @@ function HealComm:PARTY_MEMBERS_CHANGED()
 		return
 	end
 	
-	-- Because parties do not have "real" groups, we will simply pretend they are all in group 0
+	-- Parties are not considered groups in terms of API, so fake it and pretend they are all in group 0
 	guidToGroup[UnitGUID("player")] = 0
 	
 	for i=1, MAX_PARTY_MEMBERS do
