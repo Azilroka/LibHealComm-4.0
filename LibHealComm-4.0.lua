@@ -693,7 +693,7 @@ local function loadPriestData()
 	
 	-- Hot data
 	local Renew = GetSpellInfo(139)
-	hotData[Renew] = {8, 14, 20, 26, 32, 38, 44, 50, 56, 60, 65, 70, 75, 80, interval = 3}
+	hotData[Renew] = {8, 14, 20, 26, 32, 38, 44, 50, 56, 60, 65, 70, 75, 80, coeff = 15 / 15, interval = 3}
 	
 	-- Talent data
 	local Grace = GetSpellInfo(47517)
@@ -714,13 +714,13 @@ local function loadPriestData()
 	talentData[DivineProvidence] = {mod = 0.02, current = 0}
 	-- Improved Renew (Add)
 	local ImprovedRenew = GetSpellInfo(14908)
-	talentData[ImprovedRenew] = {step = 0.05, current = 0}
+	talentData[ImprovedRenew] = {mod = 0.05, current = 0}
 	-- Empowered Renew (Multi, spell power)
 	local EmpoweredRenew = GetSpellInfo(63534)
-	talentData[EmpoweredRenew] = {step = 0.05, current = 0}
+	talentData[EmpoweredRenew] = {mod = 0.05, current = 0}
 	-- Twin Disciplines (Add)
 	local TwinDisciplines = GetSpellInfo(47586)
-	talentData[TwinDisciplines] = {step = 0.01, current = 0}
+	talentData[TwinDisciplines] = {mod = 0.01, current = 0}
 	
 	-- Keep track of who has grace on them
 	local activeGraceGUID, activeGraceModifier
@@ -774,13 +774,14 @@ local function loadPriestData()
 			addModifier = addModifier + talentData[ImprovedRenew].current
 			addModifier = addModifier + talentData[TwinDisciplines].current
 			
-			-- Glyph of Renew, one less tick for +25% healing per tick. Given that this is supposed to keep each tick the same just heal faster, I assume this is an additive modifier
+			-- Glyph of Renew, one less tick for +25% healing per tick. Given that this is supposed to keep overall healing the same, just healing faster it's going to be an additive modifier.
 			if( glyphCache[55674] ) then
 				addModifier = addModifier + 0.25
 			end
 			
+			local ticks = 5
 			
-			spellPower = spellPower * (((duration / 15) * 1.88) * (1 + (talentData[EmpoweredRenew].current)))
+			spellPower = spellPower * ((hotData[spellName].coeff * 1.88) * (1 + (talentData[EmpoweredRenew].current)))
 			spellPower = spellPower / ticks
 			healAmount = healAmount / ticks
 		end
@@ -1389,6 +1390,7 @@ local function parseChannelHeal(casterGUID, sender, spellID, amount, totalTicks,
 	table.wipe(pending)
 	pending.startTime = startTime / 1000
 	pending.endTime = endTime / 1000
+	pending.duration = math.max(pending.duration or 0, pending.endTime - pending.startTime)
 	pending.totalTicks = totalTicks
 	pending.tickInterval = (pending.endTime - pending.startTime) / totalTicks
 	pending.spellID = spellID
