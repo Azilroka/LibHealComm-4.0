@@ -147,14 +147,15 @@ end
 
 -- APIs
 local pendingHeals = HealComm.pendingHeals
-local ALL_HEALS = 0x0f
+local ALL_DATA = 0x0f
 local DIRECT_HEALS = 0x01
 local CHANNEL_HEALS = 0x02
 local HOT_HEALS = 0x04
+local ABSORB_SHIELDS = 0x08
+local ALL_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS, HOT_HEALS)
 local CASTED_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS)
---local ABSORB_HEALS = 0x08
 
-HealComm.ALL_HEALS, HealComm.CHANNEL_HEALS, HealComm.DIRECT_HEALS, HealComm.HOT_HEALS, HealComm.CASTED_HEALS = ALL_HEALS, CHANNEL_HEALS, DIRECT_HEALS, HOT_HEALS, CASTED_HEALS
+HealComm.ALL_HEALS, HealComm.CHANNEL_HEALS, HealComm.DIRECT_HEALS, HealComm.HOT_HEALS, HealComm.CASTED_HEALS, HealComm.ABSORB_SHIELDS, HealComm.ALL_DATA = ALL_HEALS, CHANNEL_HEALS, DIRECT_HEALS, HOT_HEALS, CASTED_HEALS, ABSORB_SHIELDS, ALL_DATA
 
 -- Returns the current healing modifier for the GUID
 function HealComm:GetHealModifier(guid)
@@ -197,7 +198,7 @@ local function filterData(spells, filterGUID, bitFlag, time)
 					-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
 					-- this logic works well for the time being, but it needs to be changed to specifically calculate at what GetTime()
 					-- each tick happens, because if the next tick is in 0.50s and we want the next 0.75s, then it will be wrong
-					elseif( pending.bitType == CHANNEL_HEALS ) then
+					elseif( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) then
 						local timeBand = math.min(time and time - currentTime or math.huge, endTime - GetTime())
 						if( timeBand > 0 and timeBand >= pending.tickInterval ) then
 							local ticks = math.floor((timeBand / pending.tickInterval) + 0.5)
@@ -306,21 +307,21 @@ end
 	
 -- DRUIDS
 -- All data is accurate as of 3.2.2 (build 10257)
+-- The hot glyphs that factor in +sp per tick need to be improved to actually work
 local function loadDruidData()
 	-- Spell data
-	local Lifebloom = GetSpellInfo(33763)
 	local WildGrowth = GetSpellInfo(48438)
 	local TreeofLife = GetSpellInfo(5420)
 	local Innervate = GetSpellInfo(29166)
 	
 	-- Rejuvenation
 	local Rejuvenation = GetSpellInfo(774)
-	--hotData[Rejuvenation] = {4, 10, 16, 22, 28, 34, 40, 46, 52, 58, 60, 63, 69, 75, 80, interval = 3}
-
+	hotData[Rejuvenation] = {4, 10, 16, 22, 28, 34, 40, 46, 52, 58, 60, 63, 69, 75, 80, interval = 3}
+	-- Lifebloom, fun spell. How do you consider the bloom, would that be considered a normal heal at the end? Maybe
+	local Lifebloom = GetSpellInfo(33763)
+	hotData[Lifebloom] = {64, 72, 80, coeff = 0.66626, interval = 1}
+	
 	--[[
-	-- Lifebloom, another fun spell. How do you consider the bloom, would that be considered a normal heal at the end? Maybe
-	-- Blizzard should delete Druids and make this easier
-	spellData[Lifebloom] = {level = {64, 72, 80}, type = "hot"}
 	-- Wild Growth, another fun spell. The events will either need to support a list of hot ticks... or something like that
 	spellData[WildGrowth] = {level = {60, 70, 75, 80}, type = "hot"}
 	]]
@@ -358,15 +359,7 @@ local function loadDruidData()
 	local ImprovedRejuv = GetSpellInfo(17111)
 	talentData[ImprovedRejuv] = {mod = 0.05, current = 0}
 	
-	
-	--[[
-		Idols
-		
-		40711 - Idol of Lush Moss, 125 LB per tick SP
-		27886 - Idol of the Emerald Queen, +47 per LB Tick
-	]]
-	
-	baseHealingRelics = {[28568] = HealingTouch, [22399] = HeaingTouch}
+	baseHealingRelics = {[28568] = HealingTouch, [22399] = HealingTouch}
 	
 	-- Set data
 	itemSetsData["T7 Resto"] = {40460, 40461, 40462, 40463, 40465, 39531, 39538, 39539, 39542, 39543}
@@ -407,19 +400,19 @@ local function loadDruidData()
 	
 	-- Calculate hot heals
 	CalculateHotHealing = function(guid, spellID)
-		--[[
 		local spellName, spellRank = GetSpellInfo(spellID)
 		local healAmount = HealComm.averageHeal[spellName .. spellRank]
 		local spellPower = GetSpellBonusHealing()
 		local multiModifier, addModifier = 1, 1
 		local rank = HealComm.rankNumbers[spellRank]
+		local ticks = 1
 		
 		addModifier = addModifier + talentData[GiftofNature].current
-		addModifier = addModifier + talentData[Genesis].current
-		
-		-- Master Shapeshifter does not apply directly when using Lifebloom
+		multiModifier = multiModifier * (1 + talentData[Genesis].current)
+				
+		-- Master Shapeshifter does not apply directly when using Lifeblo	om
 		if( unitHasAura("player", TreeofLife) ) then
-			addModiifer = addModifier + talentData[MasterShapeshifter].current
+			multiModifier = multiModifier * (1 + talentData[MasterShapeshifter].current)
 			
 			-- 32387 - Idol of the Raven Godess, +44 SP while in TOL
 			if( playerCurrentRelic == 32387 ) then
@@ -439,23 +432,39 @@ local function loadDruidData()
 			end
 			
 			local duration = rank > 14 and 15 or 12
-			local ticks = (duration / hotData[spellName].interval)
+			ticks = duration / hotData[spellName].interval
 			
-			spellPower = spellPower * (((duration / 15) * 1.88) * (1 + (talentData[EmpoweredRejuv].current * 2)))
-			--spellPower = spellPower / ticks
+			spellPower = spellPower * (((duration / 15) * 1.88) * (1 + (talentData[EmpoweredRejuv].current)))
+			spellPower = spellPower / ticks
+			healAmount = healAmount / ticks
 			
 			--38366 - Idol of Pure Thoughts, +33 SP base per tick
 			if( playerCurrentRelic == 38366 ) then
 				spellPower = spellPower + 33
 			end
-
-			healAmount = calculateGeneralAmount(hotData[spellName][rank], healAmount, spellPower, multiModifier, addModifier)
+		elseif( spellName == Lifebloom ) then
+			-- 7 second base duration, 1 second ticks
+			ticks = 7
+			
+			local coeff = (hotData[spellName].coeff * (1 + (talentData[EmpoweredRejuv].current)))
+			spellPower = spellPower * coeff
+			
+			spellPower = spellPower / ticks
 			healAmount = healAmount / ticks
+			
+			-- Idol of Lush Moss, +125 SP per tick
+			if( playerCurrentRelic == 40711 ) then
+				spellPower = spellPower + 125
+			-- Idol of the Emerald Queen, +47 SP per tick
+			elseif( playerCurrentRelic == 27886 ) then
+				spellPower = spellPower + 47
+			end
 		end
-		]]
-		--return HOT_HEALS, healAmount, hotData[spellName].interval
+
+		healAmount = calculateGeneralAmount(hotData[spellName][rank], healAmount, spellPower, multiModifier, addModifier)
+		return HOT_HEALS, healAmount, hotData[spellName].interval
 	end
-	
+		
 	-- Calcualte direct and channeled heals
 	CalculateHealing = function(guid, spellName, spellRank)
 		local healAmount = HealComm.averageHeal[spellName .. spellRank]
@@ -820,7 +829,10 @@ local function loadShamanData()
 	AuraHandler = function(guid, unit)
 		riptideData[guid] = unitHasAura(unit, Riptide) and true or nil
 		
-		if( unitHasAura(unit, EarthShield) ) then
+		-- Currently, Glyph of Lesser Healing Wave + Any Earth Shield increase the healing
+		-- not just the players
+		--if( unitHasAura(unit, EarthShield) ) then
+		if( UnitBuff(unit, EarthShield) ) then
 			earthshieldGUID = guid
 		elseif( earthshieldGUID ) then
 			earthshieldGUID = nil
