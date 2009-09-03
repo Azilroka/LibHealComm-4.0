@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 8
+local minor = 9
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -198,7 +198,8 @@ local function filterData(spells, filterGUID, bitFlag, time)
 					-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
 					elseif( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) then
 						local secondsLeft = endTime - GetTime()
-						if( not time ) then
+						local bandSeconds = time and time - GetTime()
+						if( not time or bandSeconds >= secondsLeft ) then
 							healAmount = healAmount + amount * math.floor(secondsLeft / pending.tickInterval)
 						elseif( secondsLeft > 0 ) then
 							--[[
@@ -219,9 +220,23 @@ local function filterData(spells, filterGUID, bitFlag, time)
 								
 								This comes up when you have multiple hots triggering healing updates, Rejuvenation can fire an update then 0.50s later Lifebloom ticks and so on.
 							]]
+
+							--[[
+							-- Another method, but not exactly simpler than the previous
+							local bandSeconds = math.min(bandSeconds, secondsLeft)
+							local nextTickIn = pending.tickInterval - (pending.duration - secondsLeft)
+							nextTickIn = nextTickIn <= 0 and pending.tickInterval or nextTickIn
 							
-							-- I know there is a better way of doing this, but I am completely blanking on how
-							local bandSeconds = math.min(time - GetTime(), secondsLeft)
+							-- Make sure we will tick at least once within the band
+							if( bandSeconds >= nextTickIn ) then
+								bandSeconds = math.floor(bandSeconds - nextTickIn)
+								healAmount = healAmount + amount
+								healAmount = healAmount + amount * math.floor(bandSeconds / pending.tickInterval)
+								print(bandSeconds, nextTickIn, math.floor(bandSeconds / pending.tickInterval))
+							end
+							]]
+
+							local bandSeconds = math.min(bandSeconds, secondsLeft)
 							local nextTickIn = pending.tickInterval - (pending.duration - secondsLeft)
 
 							local seconds = nextTickIn <= 0 and pending.tickInterval or nextTickIn
@@ -1524,7 +1539,7 @@ local function parseHealEnd(casterGUID, sender, spellID, interrupted, ...)
 	
 	-- Hots/channels should use spellIDs, casts should use spell names. This will keep everything happy for things like Regrowth with a heal and a hot
 	local pending = pendingHeals[casterGUID][spellID] or pendingHeals[casterGUID][spellName]
-	if( not pending ) then return end
+	if( not pending or not pending.bitType ) then return end
 		
 	table.wipe(tempPlayerList)
 	
@@ -1649,9 +1664,6 @@ end
 
 
 -- Monitor aura changes as well as new hots being cast
-local COMBATLOG_OBJECT_AFFILIATION_MINE = COMBATLOG_OBJECT_AFFILIATION_MINE
-local CAN_HEAL = bit.bor(COMBATLOG_OBJECT_REACTION_FRIENDLY, COMBATLOG_OBJECT_REACTION_NEUTRAL)
-
 local eventRegistered = {["SPELL_HEAL"] = true, ["SPELL_PERIODIC_HEAL"] = true}
 if( isHealerClass ) then
 	eventRegistered["SPELL_AURA_REMOVED"] = true
@@ -1674,7 +1686,9 @@ HealComm.bucketFrame:SetScript("OnUpdate", function(self, elapsed)
 		for spellID, targetGUIDs in pairs(spells) do
 			if( #(targetGUIDs) > 0 ) then
 				local pending = pendingHeals[casterGUID][spellID] or pendingHeals[casterGUID][GetSpellInfo(spellID)]
-				HealComm.callbacks:Fire("HealComm_HealUpdated", casterGUID, pending.spellID, pending.bitType, pending[targetGUIDs[1]], unpack(targetGUIDs))
+				if( pending.bitType ) then
+					HealComm.callbacks:Fire("HealComm_HealUpdated", casterGUID, pending.spellID, pending.bitType, pending[targetGUIDs[1]], unpack(targetGUIDs))
+				end
 				
 				table.wipe(targetGUIDs)
 			end
@@ -1683,6 +1697,9 @@ HealComm.bucketFrame:SetScript("OnUpdate", function(self, elapsed)
 end)	
 
 local OVERTIME_HEALS = bit.bor(HOT_HEALS, CASTED_HEALS)
+local COMBATLOG_OBJECT_AFFILIATION_MINE = COMBATLOG_OBJECT_AFFILIATION_MINE
+local CAN_HEAL = bit.bor(COMBATLOG_OBJECT_REACTION_FRIENDLY, COMBATLOG_OBJECT_REACTION_NEUTRAL)
+
 function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags, ...)
 	if( not eventRegistered[eventType] ) then return end
 	
@@ -1709,7 +1726,7 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 		local spellID, spellName, spellSchool = ...
 		if( hotData[spellName] ) then
 			local type, amount, tickInterval = CalculateHotHealing(destGUID, spellID)
-			local targets, amount = GetHealTargets(sourceGUID, math.max(amount, 0), spellName, spellRank)
+			local targets, amount = GetHealTargets(destGUID, math.max(amount, 0), spellName, spellRank)
 			amount = amount or -1
 			
 			parseHotHeal(sourceGUID, sourceName, false, spellID, amount, tickInterval, string.split(",", targets))
