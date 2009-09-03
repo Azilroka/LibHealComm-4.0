@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 9
+local minor = 10
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -265,7 +265,7 @@ function HealComm:GetHealAmount(guid, bitFlag, time, casterGUID)
 		end
 	end
 	
-	return amount > 0 and amount or nil
+	return amount > 0 and math.floor(amount) or nil
 end
 
 -- Gets healing amounts for everyone except the player using the passed filters
@@ -277,7 +277,7 @@ function HealComm:GetOthersHealAmount(guid, bitFlag, time)
 		end
 	end
 	
-	return amount > 0 and amount or nil
+	return amount > 0 and math.floor(amount) or nil
 end
 
 -- Healing class data
@@ -1668,7 +1668,8 @@ local eventRegistered = {["SPELL_HEAL"] = true, ["SPELL_PERIODIC_HEAL"] = true}
 if( isHealerClass ) then
 	eventRegistered["SPELL_AURA_REMOVED"] = true
 	eventRegistered["SPELL_AURA_APPLIED"] = true
-	eventRegistered["SPELL_CAST_SUCCESS"] = true
+	eventRegistered["SPELL_AURA_REFRESH"] = true
+	eventRegistered["SPELL_AURA_APPLIED_DOSE"] = true
 	eventRegistered["SPELL_AURA_REMOVED_DOSE"] = true
 end
 
@@ -1720,9 +1721,8 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 				HealComm.callbacks:Fire("HealComm_HealUpdated", sourceGUID, spellID, pending.bitType, pending[destGUID], destGUID)
 			end
 		end
-		
-	-- Cast succesful
-	elseif( eventType == "SPELL_CAST_SUCCESS" and bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) == COMBATLOG_OBJECT_AFFILIATION_MINE and bit.band(destFlags, CAN_HEAL) > 0 ) then
+	-- New hot was applied
+	elseif( ( eventType == "SPELL_AURA_APPLIED" or eventType == "SPELL_AURA_REFRESH" or eventType == "SPELL_AURA_APPLIED_DOSE" ) and bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) == COMBATLOG_OBJECT_AFFILIATION_MINE ) then
 		local spellID, spellName, spellSchool = ...
 		if( hotData[spellName] ) then
 			local type, amount, tickInterval = CalculateHotHealing(destGUID, spellID)
@@ -1732,6 +1732,7 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 			parseHotHeal(sourceGUID, sourceName, false, spellID, amount, tickInterval, string.split(",", targets))
 			sendMessage(string.format("H::%d::%d:%d:%s", spellID, amount, tickInterval, targets))
 		end
+		
 	-- Aura applied
 	elseif( eventType == "SPELL_AURA_APPLIED" and bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) == COMBATLOG_OBJECT_AFFILIATION_MINE ) then
 		local spellID, spellName, spellSchool, auraType = ...
