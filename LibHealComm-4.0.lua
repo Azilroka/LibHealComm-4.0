@@ -1845,6 +1845,8 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 
 				if( pending.hasBomb and pendingHeals[sourceGUID][spellName] ) then
 					local bombPending = pendingHeals[sourceGUID][spellName]
+					local bombAmount
+					
 					for i=1, bombPending, 4 do
 						if( bombPending[i] == destGUID ) then
 							bombAmount = bombPending[i + 1]
