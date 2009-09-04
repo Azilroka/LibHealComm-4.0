@@ -45,19 +45,24 @@ local function unescape(str)
 end
 
 local compressGUID = setmetatable({}, {
-	__index = function(self, guid)
-         local cguid = string.match(guid, "0x(.*)")
-         local str = string.gsub(cguid, "(%x%x)", guidCompressHelper)
-         self[guid] = str
-         return str
+	__index = function(tbl, guid)
+		local cguid = string.match(guid, "0x(.*)")
+		local str = string.gsub(cguid, "(%x%x)", guidCompressHelper)
+		rawset(tbl, guid, str)
+		return str
 end})
 
 local decompressGUID = setmetatable({}, {
-	__index = function(self, str)
+	__index = function(tbl, str)
 		if( not str ) then return nil end
 		local usc = unescape(str)
-		local guid = string.format(dfmt, string.byte(usc, 1, 8))
-		self[str] = guid
+		local a, b, c, d, e, f, g, h = string.byte(usc, 1, 8)
+		if( not h ) then
+			print("LHC-4.0 bad GUID", str)
+		end
+		
+		local guid = string.format(dfmt, a, b, c, d, e, f, g, h)
+		rawset(tbl, str, guid)
 		return guid
 end})
 
