@@ -1810,7 +1810,7 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 				parseHotBomb(sourceGUID, sourceName, false, spellID, bombAmount, string.split(",", bombTargets))
 				sendMessage(string.format("B::%d:%d:%s:%d::%d:%s", spellID, bombAmount, bombTargets, amount, tickInterval, targets))
 			else
-				sendMessage(string.format("H::%d::%d:%d:%s", spellID, amount, tickInterval, targets))
+				sendMessage(string.format("H::%d:%d::%d:%s", spellID, amount, tickInterval, targets))
 			end
 		end
 		
@@ -1862,21 +1862,6 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 				-- Failed to find any sort of bomb-y info we needed or it doesn't have a bomb anyway
 				sendMessage(string.format("U::%d:%d:%d:%s", spellID, amount, pending.tickInterval, compressGUID[destGUID]))
 			end
-			
-			--[[
-			local type, amount, tickInterval, bombAmount = CalculateHotHealing(destGUID, spellID)
-			local targets, amount = GetHealTargets(type, destGUID, math.max(amount, 0), spellName)
-			
-			if( bombAmount ) then
-				local bombTargets, bombAmount = GetHealTargets(BOMB_HEALS, destGUID, math.max(bombAmount, 0), spellName)
-				parseHotHeal(sourceGUID, sourceName, false, spellID, amount, tickInterval, string.split(",", targets))
-				parseHotBomb(sourceGUID, sourceName, false, spellID, bombAmount, string.split(",", bombTargets))
-				sendMessage(string.format("B::%d::%d:%d:%s", spellID, amount, tickInterval, targets))
-			else
-				parseHotHeal(sourceGUID, sourceName, false, spellID, amount, tickInterval, string.split(",", targets))
-				sendMessage(string.format("H::%d::%d:%d:%s", spellID, amount, tickInterval, targets))
-			end
-			]]
 		end
 
 	-- Aura faded		
