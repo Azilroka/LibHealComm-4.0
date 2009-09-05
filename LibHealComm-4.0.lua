@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 11
+local minor = 12
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -20,6 +20,7 @@ HealComm.pendingHeals = HealComm.pendingHeals or {}
 
 -- These shouldn't be persistant between versions because if healing data changes it should reload all the spells inside regardless
 local spellData, hotData = {}, {}
+local tempPlayerList = {}
 
 -- Figure out what they are now since a few things change based off of this
 local playerClass = select(2, UnitClass("player"))
@@ -57,15 +58,16 @@ local decompressGUID = setmetatable({}, {
 		if( not str ) then return nil end
 		local usc = unescape(str)
 		local a, b, c, d, e, f, g, h = string.byte(usc, 1, 8)
-		if( not h ) then
-			print("LHC-4.0 bad GUID", str)
+		local ok, guid = pcall(string.format, dfmt, a, b, c, d, e, f, g, h)        
+
+		if( not ok ) then
+			print("LHC-4.0 bad GUID", str, a, b, c, d, e, f, g, h, "error:", guid, usc)
+			return
 		end
-		
-		local guid = string.format(dfmt, a, b, c, d, e, f, g, h)
+
 		rawset(tbl, str, guid)
 		return guid
 end})
-
 	
 -- Validation for passed arguments
 if( not HealComm.tooltip ) then
@@ -1179,6 +1181,28 @@ local function updateDistributionChannel()
 	end
 end
 
+-- Removes all pending heals, if it's a group that is causing the clear then we won't remove the players heals on themselves
+local function clearPendingHeals(onlyGroup)
+	for casterGUID, spells in pairs(pendingHeals) do
+		for _, pending in pairs(spells) do
+			if( pending.bitType ) then
+				table.wipe(tempPlayerList)
+				for i=#(pending), 1, -4 do
+					local guid = pending[i - 3]
+					if( not onlyGroup or ( onlyGroup and guidToUnit[guid] and casterGUID ~= playerGUID and guid ~= playerGUID ) ) then
+						table.insert(tempPlayerList, guid)
+					end
+				end
+				
+				if( #(tempPlayerList) > 0 ) then
+					HealComm.callbacks:Fire("HealComm_HealStopped", casterGUID, pending.spellID, pending.bitType, true, unpack(tempPlayerList))
+					table.wipe(pending)
+				end
+			end
+		end
+	end
+end
+
 -- Figure out where we should be sending messages and wipe some caches
 function HealComm:ZONE_CHANGED_NEW_AREA()
 	local type = select(2, IsInInstance())
@@ -1186,21 +1210,7 @@ function HealComm:ZONE_CHANGED_NEW_AREA()
 		instanceType = type
 		
 		updateDistributionChannel()
-		
-		-- Check and remove any expired events, in reality I should start to fire a "player healing might have updated" event too
-		local time = GetTime()
-		for _, spellList in pairs(self.pendingHeals) do
-			for _, spell in pairs(spellList) do
-				for i=#(spell), 1, -4 do
-					if( spell[i] <= time ) then
-						table.remove(spell, i)
-						table.remove(spell, i - 1)
-						table.remove(spell, i - 2)
-						table.remove(spell, i - 3)
-					end
-				end
-			end
-		end
+		clearPendingHeals()
 		
 		-- Changes the value of Necrotic Poison based on zone type, if there are more difficulty type MS's I'll support those too
 		-- Heroic = 90%, Non-Heroic = 75%
@@ -1373,8 +1383,6 @@ function HealComm:PLAYER_EQUIPMENT_CHANGED()
 end
 
 -- COMM CODE
-local tempPlayerList = {}
-
 -- Direct heal started
 local function loadHealList(pending, amount, stack, endTime, ...)
 	table.wipe(tempPlayerList)
@@ -2135,6 +2143,8 @@ end
 -- Once we leave a group all of the table data we had should be reset completely to release the tables into memory
 local wasInParty, wasInRaid
 local function clearGUIDData()
+	clearPendingHeals(true)
+	
 	-- Clear all cached GUID compressers
 	table.wipe(compressGUID)
 	table.wipe(decompressGUID)
@@ -2169,7 +2179,9 @@ function HealComm:PARTY_MEMBERS_CHANGED()
 	updateDistributionChannel()
 	
 	if( GetNumPartyMembers() == 0 ) then
-		clearGUIDData()
+		if( wasInParty ) then
+			clearGUIDData()
+		end
 		return
 	end
 	
@@ -2199,7 +2211,9 @@ function HealComm:RAID_ROSTER_UPDATE()
 
 	-- Left raid, clear any cache we had
 	if( GetNumRaidMembers() == 0 ) then
-		clearGUIDData()
+		if( wasInRaid ) then
+			clearGUIDData()
+		end
 		return
 	end
 	
