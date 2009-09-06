@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 12
+local minor = 13
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -111,11 +111,10 @@ if( not HealComm.averageHeal ) then
 					-- Check last line for the spell info
 					local text = HealComm.tooltip["TextLeft" .. HealComm.tooltip:NumLines()]
 					if( text ) then
-						-- The ..? is to match one to two characters between two numbers to be localization independant
-						-- And the string.gmatch is to account for the fact that spells like Holy Shock or Penance will list the damage spell first
+						-- The string.gmatch is to account for the fact that spells like Holy Shock or Penance will list the damage spell first
 						-- then the healing spell last, so we do a string.gmatch to get the healing average not damage average
 						local minHeal, maxHeal
-						for min, max in string.gmatch(text:GetText(), "(%d+) ..? (%d+)") do
+						for min, max in string.gmatch(text:GetText(), "(%d+) ?[\195\160tobisa到~\-]+ ?(%d+)") do
 							minHeal, maxHeal = min, max
 						end
 						
@@ -160,7 +159,7 @@ local CHANNEL_HEALS = 0x02
 local HOT_HEALS = 0x04
 local ABSORB_SHIELDS = 0x08
 local BOMB_HEALS = 0x16
-local ALL_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS, HOT_HEALS)
+local ALL_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS, HOT_HEALS, BOMB_HEALS)
 local CASTED_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS)
 local OVERTIME_HEALS = bit.bor(HOT_HEALS, CASTED_HEALS)
 
@@ -188,7 +187,7 @@ function HealComm:GetGuidUnitMapTable()
 end
 
 -- Get the healing amount that matches the passed filters
-local function filterData(spells, filterGUID, bitFlag, time)
+local function filterData(spells, filterGUID, bitFlag, time, ignoreGUID)
 	local healAmount = 0
 	local currentTime = GetTime()
 	
@@ -196,7 +195,7 @@ local function filterData(spells, filterGUID, bitFlag, time)
 		if( pending.bitType and bit.band(pending.bitType, bitFlag) > 0 ) then
 			for i=1, #(pending), 4 do
 				local guid = pending[i]
-				if( guid == filterGUID ) then
+				if( guid == filterGUID or ignoreGUID ) then
 					local amount = pending[i + 1]
 					local endTime = pending[i + 3]
 					endTime = endTime > 0 and endTime or pending.endTime
@@ -287,6 +286,10 @@ function HealComm:GetOthersHealAmount(guid, bitFlag, time)
 	end
 	
 	return amount > 0 and math.floor(amount) or nil
+end
+
+function HealComm:GetCasterHealAmount(guid, bitFlag, time)
+	return pendingHeals[guid] and filterData(pendingHeals[guid], nil, bitFlag, time, true) or 0
 end
 
 -- Healing class data
