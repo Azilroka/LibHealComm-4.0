@@ -45,10 +45,14 @@ local function unescape(str)
    return string.gsub(str, "\254\252", "\254")
 end
 
+local debugGUID = {}
+
 local compressGUID = setmetatable({}, {
 	__index = function(tbl, guid)
 		local cguid = string.match(guid, "0x(.*)")
 		local str = string.gsub(cguid, "(%x%x)", guidCompressHelper)
+		
+		debugGUID[str] = guid
 		rawset(tbl, guid, str)
 		return str
 end})
@@ -60,9 +64,9 @@ local decompressGUID = setmetatable({}, {
 		local a, b, c, d, e, f, g, h = string.byte(usc, 1, 8)
 		local ok, guid = pcall(string.format, dfmt, a, b, c, d, e, f, g, h)        
 
-		if( not ok ) then
-			print("LHC-4.0 bad GUID", str, a, b, c, d, e, f, g, h, "error:", guid, usc)
-			return
+		if( ok ) then
+			print("LHC-4.0 bad GUID", a, b, c, d, e, f, g, h, "orig", debugGUID[str], "str", str, "usc", usc)
+			return nil
 		end
 
 		rawset(tbl, str, guid)
