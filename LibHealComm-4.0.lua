@@ -64,7 +64,7 @@ local decompressGUID = setmetatable({}, {
 		local a, b, c, d, e, f, g, h = string.byte(usc, 1, 8)
 		local ok, guid = pcall(string.format, dfmt, a, b, c, d, e, f, g, h)        
 
-		if( ok ) then
+		if( not ok ) then
 			print("LHC-4.0 bad GUID", a, b, c, d, e, f, g, h, "orig", debugGUID[str], "str", str, "usc", usc)
 			return nil
 		end
