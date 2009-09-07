@@ -22,10 +22,7 @@ local spellData, hotData, tempPlayerList = {}, {}, {}
 
 -- Figure out what they are now since a few things change based off of this
 local playerClass = select(2, UnitClass("player"))
-local isHealerClass
-if( playerClass == "DRUID" or playerClass == "PRIEST" or playerClass == "SHAMAN" or playerClass == "PALADIN" ) then
-	isHealerClass = true
-end
+local isHealerClass = playerClass == "DRUID" or playerClass == "PRIEST" or playerClass == "SHAMAN" or playerClass == "PALADIN"
 
 -- Stolen from Threat-2.0, compresses GUIDs from 18 characters to around 8 - 9, 50%/55% savings
 -- 44 = , / 58 = : / 255 = \255 / 0 = line break? / 64 = @
@@ -44,7 +41,7 @@ local function unescape(str)
 	return string.gsub(str, "\254\253", "\255")
 end
 
-compressGUID = setmetatable({}, {
+local compressGUID = setmetatable({}, {
 	__index = function(tbl, guid)
 		local cguid = string.match(guid, "0x(.*)")
 		local str = string.gsub(cguid, "(%x%x)", guidCompressHelper)
