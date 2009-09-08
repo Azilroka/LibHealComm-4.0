@@ -1,7 +1,7 @@
 ## Interface: 30200
-## Title: Lib: Heal Comm - 4.0
-## Notes: Pending heals library
-## Author: Shadowed and xbeeps
+## Title: Lib: HealComm-4.0
+## Notes: Library for showing incoming heals and hots
+## Author: Shadowed
 ## X-Category: Library
 
 libs\LibStub\LibStub.lua

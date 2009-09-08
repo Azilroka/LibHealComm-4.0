@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 15
+local minor = 16
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -16,9 +16,11 @@ HealComm.playerModifiers = HealComm.playerModifiers or {}
 HealComm.guidToGroup = HealComm.guidToGroup or {}
 HealComm.guidToUnit = HealComm.guidToUnit or {}
 HealComm.pendingHeals = HealComm.pendingHeals or {}
+HealComm.spellData = HealComm.spellData or {}
+HealComm.hotData = HealComm.hotData or {}
+HealComm.tempPlayerList = HealComm.tempPlayerList or {}
 
--- These shouldn't be persistant between versions because if healing data changes it should reload all the spells inside regardless
-local spellData, hotData, tempPlayerList = {}, {}, {}
+local spellData, hotData, tempPlayerList = HealComm.spellData, HealComm.hotData, HealComm.tempPlayerList
 
 -- Figure out what they are now since a few things change based off of this
 local playerClass = select(2, UnitClass("player"))
@@ -118,9 +120,9 @@ end
 HealComm.averageHeal = HealComm.averageHeal or {}
 HealComm.averageHealMT = HealComm.averageHealMT or {
 	__index = function(tbl, index)
-		local rank = HealComm.rankNumbers[index]
 		local playerLevel = UnitLevel("player")
-		local spellData = spellData[tbl.spell]
+		local rank = HealComm.rankNumbers[index]
+		local spellData = HealComm.spellData[tbl.spell]
 		local spellLevel = spellData.levels[rank]
 
 		-- No increase, it doesn't scale with level
@@ -1914,32 +1916,26 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 	-- Single stack of a hot was removed, this only applies when going from 2 -> 1, when it goes from 1 -> 0 it fires SPELL_AURA_REMOVED
 	elseif( eventType == "SPELL_AURA_REMOVED_DOSE" and bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) == COMBATLOG_OBJECT_AFFILIATION_MINE ) then
 		local spellID, spellName, spellSchool, auraType, stacks = ...
-		--print(sourceName, sourceGUID, destName, destGUID, spellName, auraType, stacks)
-		
 		local pending = sourceGUID and pendingHeals[sourceGUID] and pendingHeals[sourceGUID][spellID]
-		if( pending ) then
-			--print(UnitAura("player", spellName))
-			
+		if( pending and pending.bitType ) then
 			local amount
 			for i=1, #(pending), 4 do
 				if( pending[i] == destGUID ) then
-					--print("Found", pending[i + 1])
-					amount = pending[i + 1]
+					amount = pending[i + 1] / pending[i + 2]
 					break
 				end
 			end
 			
-			--print("Proceeding", amount, pending.tickInterval)
 			if( amount ) then
 				parseHotHeal(sourceGUID, sourceName, true, spellID, amount, pending.tickInterval, compressGUID[destGUID])
 
-				if( pending.hasBomb and pendingHeals[sourceGUID][spellName] ) then
-					local bombPending = pendingHeals[sourceGUID][spellName]
+				local bombPending = pending.hasBomb and pendingHeals[sourceGUID][spellName]
+				if( bombPending and bombPending.bitType ) then
 					local bombAmount
 					
-					for i=1, bombPending, 4 do
+					for i=1, #(bombPending), 4 do
 						if( bombPending[i] == destGUID ) then
-							bombAmount = bombPending[i + 1]
+							bombAmount = bombPending[i + 1] / bombPending[i + 2]
 							break
 						end
 					end
@@ -2312,9 +2308,6 @@ end
 
 -- Initialize the library
 function HealComm:OnInitialize()
-	if( self.initialized ) then return end
-	self.initialized = true
-	
 	-- Load all of the classes formulas and such
 	LoadClassData()
 	
@@ -2373,11 +2366,14 @@ function HealComm:OnInitialize()
 	self.frame:RegisterEvent("GLYPH_UPDATED")
 	self.frame:RegisterEvent("UNIT_PET")
 	self.frame:RegisterEvent("UNIT_AURA")
+	
+	if( self.initialized ) then return end
+	self.initialized = true
 
-	self.resetFrame = self.resetFrame or CreateFrame("Frame")
+	self.resetFrame = CreateFrame("Frame")
 	self.resetFrame:Hide()
 	self.resetFrame:SetScript("OnUpdate", function(self) self:Hide() end)
-	
+
 	-- You can't unhook secure hooks after they are done, so will hook once and the HealComm table will update with the latest functions
 	-- automagically. If a new function is ever used it'll need a specific variable to indicate those set of hooks.
 	-- By default most of these are mapped to a more generic function, but I call separate ones so I don't have to rehook
