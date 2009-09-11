@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 16
+local minor = 17
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -999,7 +999,7 @@ if( playerClass == "SHAMAN" ) then
 		
 		-- Cast was interrupted, recheck if we still have the auras up
 		ResetChargeData = function(guid)
-			riptideData[guid] = guidToUnit[guid] and unitHasAura(guidToUnit[unit], Riptide) and true or nil
+			riptideData[guid] = guidToUnit[guid] and unitHasAura(guidToUnit[guid], Riptide) and true or nil
 		end
 		
 		-- Lets a specific override on how many people this will hit
