@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 17
+local minor = 18
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -147,11 +147,11 @@ HealComm.averageHealMT = HealComm.averageHealMT or {
 
 -- APIs
 local pendingHeals = HealComm.pendingHeals
-local ALL_DATA = 0x0f
+--local ALL_DATA = 0x0f
 local DIRECT_HEALS = 0x01
 local CHANNEL_HEALS = 0x02
 local HOT_HEALS = 0x04
-local ABSORB_SHIELDS = 0x08
+--local ABSORB_SHIELDS = 0x08
 local BOMB_HEALS = 0x16
 local ALL_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS, HOT_HEALS, BOMB_HEALS)
 local CASTED_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS)
@@ -199,26 +199,19 @@ local function filterData(spells, filterGUID, bitFlag, time, ignoreGUID)
 						healAmount = healAmount + amount
 					-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
 					elseif( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) then
-						local secondsLeft = endTime - GetTime()
+						-- Because of combat log timing and server timing and all that fun stuff, the subtraction of 1/10th of a second and then rounding
+						-- it to the 2nd decimal place is to try and fix "ghost" pulses
+						local secondsLeft = math.floor(((endTime - GetTime() - 0.1) * 100) + 0.5) / 100
 						local bandSeconds = time and time - GetTime()
-						if( not time or bandSeconds >= secondsLeft ) then
-							healAmount = healAmount + amount * math.floor(secondsLeft / pending.tickInterval)
+						if( secondsLeft > 0 and ( not time or bandSeconds >= secondsLeft ) ) then
+							healAmount = healAmount + amount * (math.floor(secondsLeft / pending.tickInterval) + 1)
 						elseif( secondsLeft > 0 ) then
 							--[[
-								This is necessary to make sure we get the correct amount of ticks.
-								
 								Here's what would happen if we assume that Lifebloom will tick exactly every 1 second from the time the function is called:
-								
-								1s = tick
-								2s = tick
-								Hit time band, only ticking twice in 2.30 seconds.
-								
+								1s = tick, 2s tick, 2.3 second band reached, 3s tick
+
 								When in reality Lifebloom is ticking 0.20s ahead of the call, so it's really:
-								
-								0.20s = tick
-								1.20s = tick
-								2.20s = tick
-								Hit time band, ticked three times in 2.30 seconds.
+								0.20s = tick, 1.20s = tick, 2.20s = tick, 2.3 second band reached, 3.30s tick
 								
 								This comes up when you have multiple hots triggering healing updates, Rejuvenation can fire an update then 0.50s later Lifebloom ticks and so on.
 							]]
@@ -237,10 +230,8 @@ local function filterData(spells, filterGUID, bitFlag, time, ignoreGUID)
 								print(bandSeconds, nextTickIn, math.floor(bandSeconds / pending.tickInterval))
 							end
 							]]
-
-							local bandSeconds = math.min(bandSeconds, secondsLeft)
+							
 							local nextTickIn = pending.tickInterval - (pending.duration - secondsLeft)
-
 							local seconds = nextTickIn <= 0 and pending.tickInterval or nextTickIn
 							repeat
 								healAmount = healAmount + amount
