@@ -201,7 +201,7 @@ local function filterData(spells, filterGUID, bitFlag, time, ignoreGUID)
 					elseif( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) then
 						-- Because of combat log timing and server timing and all that fun stuff, the subtraction of 1/10th of a second and then rounding
 						-- it to the 2nd decimal place is to try and fix "ghost" pulses
-						local secondsLeft = math.floor(((endTime - GetTime() - 0.1) * 100) + 0.5) / 100
+						local secondsLeft = math.floor((endTime - GetTime() - 0.1) * 100) / 100
 						local bandSeconds = time and time - GetTime()
 						if( secondsLeft > 0 and ( not time or bandSeconds >= secondsLeft ) ) then
 							healAmount = healAmount + amount * (math.floor(secondsLeft / pending.tickInterval) + 1)
