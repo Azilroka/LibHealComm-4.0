@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 18
+local minor = 19
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -201,10 +201,14 @@ local function filterData(spells, filterGUID, bitFlag, time, ignoreGUID)
 					elseif( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) then
 						-- Because of combat log timing and server timing and all that fun stuff, the subtraction of 1/10th of a second and then rounding
 						-- it to the 2nd decimal place is to try and fix "ghost" pulses
-						local secondsLeft = math.floor((endTime - GetTime() - 0.1) * 100) / 100
-						local bandSeconds = time and time - GetTime()
-						if( secondsLeft > 0 and ( not time or bandSeconds >= secondsLeft ) ) then
-							healAmount = healAmount + amount * (math.floor(secondsLeft / pending.tickInterval) + 1)
+						local secondsLeft = math.floor((endTime - currentTime - 0.1) * 100) / 100
+						if( secondsLeft > 0 and ( not time or time >= endTime ) ) then
+							if( secondsLeft >= pending.tickInterval ) then
+								healAmount = healAmount + (amount * math.floor(secondsLeft / pending.tickInterval))
+							end
+							
+							-- Account for the final tick at 0s left
+							healAmount = healAmount + amount 
 						elseif( secondsLeft > 0 ) then
 							--[[
 								Here's what would happen if we assume that Lifebloom will tick exactly every 1 second from the time the function is called:
@@ -215,29 +219,18 @@ local function filterData(spells, filterGUID, bitFlag, time, ignoreGUID)
 								
 								This comes up when you have multiple hots triggering healing updates, Rejuvenation can fire an update then 0.50s later Lifebloom ticks and so on.
 							]]
-
-							--[[
-							-- Another method, but not exactly simpler than the previous
-							local bandSeconds = math.min(bandSeconds, secondsLeft)
-							local nextTickIn = pending.tickInterval - (pending.duration - secondsLeft)
-							nextTickIn = nextTickIn <= 0 and pending.tickInterval or nextTickIn
-							
-							-- Make sure we will tick at least once within the band
-							if( bandSeconds >= nextTickIn ) then
-								bandSeconds = math.floor(bandSeconds - nextTickIn)
+							local bandSeconds = time - GetTime()
+							healAmount = healAmount + (amount * math.floor(bandSeconds / pending.tickInterval))
+							local nextTickIn = secondsLeft % pending.tickInterval
+							local fractionalBand = bandSeconds % pending.tickInterval
+							if( nextTickIn > 0 and nextTickIn <= fractionalBand ) then
 								healAmount = healAmount + amount
-								healAmount = healAmount + amount * math.floor(bandSeconds / pending.tickInterval)
-								print(bandSeconds, nextTickIn, math.floor(bandSeconds / pending.tickInterval))
 							end
-							]]
-							
-							local nextTickIn = pending.tickInterval - (pending.duration - secondsLeft)
-							local seconds = nextTickIn <= 0 and pending.tickInterval or nextTickIn
-							repeat
-								healAmount = healAmount + amount
-								seconds = seconds + pending.tickInterval
-							until( seconds > bandSeconds )
 						end
+						
+						--if( healAmount > amount ) then
+						--	print(secondsLeft, time >= endTime, time, time - GetTime(), pending.tickInterval)
+						--end
 					end
 				end
 			end
