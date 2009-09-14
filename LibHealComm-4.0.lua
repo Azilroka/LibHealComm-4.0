@@ -20,6 +20,13 @@ HealComm.spellData = HealComm.spellData or {}
 HealComm.hotData = HealComm.hotData or {}
 HealComm.tempPlayerList = HealComm.tempPlayerList or {}
 
+if( not HealComm.unitToPet ) then
+	HealComm.unitToPet = {["player"] = "pet"}
+	for i=1, MAX_PARTY_MEMBERS do HealComm.unitToPet["party" .. i] = "partypet" .. i end
+	for i=1, MAX_RAID_MEMBERS do HealComm.unitToPet["raid" .. i] = "raidpet" .. i end
+end
+	
+
 local spellData, hotData, tempPlayerList = HealComm.spellData, HealComm.hotData, HealComm.tempPlayerList
 
 -- Figure out what they are now since a few things change based off of this
@@ -2214,8 +2221,7 @@ end
 
 -- Keeps track of pet GUIDs, as pets are considered vehicles this will also map vehicle GUIDs to unit
 function HealComm:UNIT_PET(unit)
-	unit = unit == "player" and "pet" or unit .. "pet"
-	
+	unit = self.unitToPet[unit]
 	local guid = UnitGUID(unit)
 	if( guid ) then
 		guidToUnit[guid] = unit
