@@ -2143,7 +2143,7 @@ end
 -- don't have to worry about the GUID no longer being invalid etc
 function HealComm:TargetLast(guid, name)
 	if( name and guid and self.resetFrame:IsShown() ) then
-		setCastData(5, name, guid) 
+		setCastData(6, name, guid) 
 	end
 	
 	self.resetFrame:Hide()
