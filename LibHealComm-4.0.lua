@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 20
+local minor = 21
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -156,7 +156,7 @@ local function updateRecord(pending, guid, amount, stack, endTime, ticksLeft)
 	if( pending[guid] ) then
 		local id = pending[guid]
 		pending[id] = guid
-		pending[id + 1] = amount * stack
+		pending[id + 1] = amount
 		pending[id + 2] = stack
 		pending[id + 3] = endTime or 0
 		pending[id + 4] = ticksLeft or 0
@@ -164,7 +164,7 @@ local function updateRecord(pending, guid, amount, stack, endTime, ticksLeft)
 		pending[guid] = #(pending) + 1
 
 		table.insert(pending, guid)
-		table.insert(pending, amount * stack)
+		table.insert(pending, amount)
 		table.insert(pending, stack)
 		table.insert(pending, endTime or 0)
 		table.insert(pending, ticksLeft or 0)
@@ -185,11 +185,11 @@ local function removeRecord(pending, guid)
 	
 	-- guid, amount, stack, endTime, ticksLeft
 	local id = pending[guid]
-	table.remove(pending, id)
-	table.remove(pending, id + 1)
-	table.remove(pending, id + 2)
-	table.remove(pending, id + 3)
 	table.remove(pending, id + 4)
+	table.remove(pending, id + 3)
+	table.remove(pending, id + 2)
+	table.remove(pending, id + 1)
+	table.remove(pending, id)
 	pending[guid] = nil
 end
 
@@ -273,18 +273,19 @@ local function filterData(spells, filterGUID, bitFlag, time, ignoreGUID)
 				local guid = pending[i]
 				if( guid == filterGUID or ignoreGUID ) then
 					local amount = pending[i + 1]
+					local stack = pending[i + 2]
 					local endTime = pending[i + 3]
 					endTime = endTime > 0 and endTime or pending.endTime
 
 					-- Direct heals are easy, if they match the filter then return them
 					if( ( pending.bitType == DIRECT_HEALS or pending.bitType == BOMB_HEALS ) and ( not time or endTime <= time ) ) then
-						healAmount = healAmount + amount
+						healAmount = healAmount + amount * stack
 					-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
 					elseif( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) then
 						if( endTime > currentTime ) then
 							local ticksLeft = pending[i + 4]
 							if( not time or time >= endTime ) then
-								healAmount = healAmount + amount * ticksLeft
+								healAmount = healAmount + (amount * stack) * ticksLeft
 							else
 								local secondsLeft = endTime - currentTime
 								local bandSeconds = time - currentTime
@@ -295,7 +296,7 @@ local function filterData(spells, filterGUID, bitFlag, time, ignoreGUID)
 									ticks = ticks + 1
 								end
 								
-								healAmount = healAmount + amount * math.min(ticks, ticksLeft)
+								healAmount = healAmount + (amount * stack) * math.min(ticks, ticksLeft)
 							end
 						end
 					end
@@ -1459,8 +1460,6 @@ local function loadHealList(pending, amount, stack, endTime, ticksLeft, ...)
 	-- The GUID -> time hash map is meant as a way of speeding up "Does this person have this heal on them" checks, so you don't
 	-- have to do a loop to find it first, mostly for CLEU
 	if( amount > 0 ) then
-		amount = amount * stack
-		
 		for i=1, select("#", ...) do
 			local guid = select(i, ...)
 			if( guid ) then
@@ -1473,7 +1472,7 @@ local function loadHealList(pending, amount, stack, endTime, ticksLeft, ...)
 			local guid = select(i, ...)
 			local amount = tonumber((select(i + 1, ...)))
 			if( guid and amount ) then
-				updateRecord(pending, decompressGUID[guid], amount * stack, stack, endTime, ticksLeft)
+				updateRecord(pending, decompressGUID[guid], amount, stack, endTime, ticksLeft)
 				table.insert(tempPlayerList, decompressGUID[guid])
 			end
 		end
@@ -1884,17 +1883,14 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 		local spellID, spellName, spellSchool, auraType, stacks = ...
 		local pending = sourceGUID and pendingHeals[sourceGUID] and pendingHeals[sourceGUID][spellID]
 		if( pending and pending.bitType ) then
-			local amount, stack = getRecord(pending, destGUID)
+			local amount = getRecord(pending, destGUID)
 			if( amount ) then
-				amount = amount / stack
 				parseHotHeal(sourceGUID, sourceName, true, spellID, amount, pending.tickInterval, compressGUID[destGUID])
 
 				local bombPending = pending.hasBomb and pendingHeals[sourceGUID][spellName]
 				if( bombPending and bombPending.bitType ) then
-					local bombAmount, bombStack = getRcord(bombPending, destGUID)
+					local bombAmount = getRcord(bombPending, destGUID)
 					if( bombAmount ) then
-						bombAmount = bombAmount / bombStack
-						
 						parseHotBomb(sourceGUID, sourceName, true, spellID, bombAmount, compressGUID[destGUID])
 						sendMessage(string.format("UB::%d:%d:%s:%d:%d:%s", spellID, bombAmount, compressGUID[destGUID], amount, pending.tickInterval, compressGUID[destGUID]))
 						return
@@ -2185,7 +2181,7 @@ end
 -- Keeps track of pet GUIDs, as pets are considered vehicles this will also map vehicle GUIDs to unit
 function HealComm:UNIT_PET(unit)
 	unit = self.unitToPet[unit]
-	local guid = UnitGUID(unit)
+	local guid = unit and UnitGUID(unit)
 	if( guid ) then
 		guidToUnit[guid] = unit
 	end
