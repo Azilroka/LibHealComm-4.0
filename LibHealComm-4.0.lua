@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 21
+local minor = 22
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -184,19 +184,39 @@ local function removeRecord(pending, guid)
 	if( not id ) then return nil end
 	
 	-- guid, amount, stack, endTime, ticksLeft
-	local id = pending[guid]
 	table.remove(pending, id + 4)
 	table.remove(pending, id + 3)
 	table.remove(pending, id + 2)
 	table.remove(pending, id + 1)
 	table.remove(pending, id)
 	pending[guid] = nil
+	
+	-- Shift any records after this ones index down 5 to account for the removal
+	for i=1, #(pending), 5 do
+		local guid = pending[i]
+		if( pending[guid] > id ) then
+			pending[guid] = pending[guid] - 5
+		end
+	end
 end
 
 local function removeRecordList(pending, inc, comp, ...)
 	for i=1, select("#", ...), inc do
 		local guid = select(i, ...)
-		removeRecord(comp and decompressGUID[guid] or guid)	
+		guid = comp and decompressGUID[guid] or guid
+		
+		local id = pending[guid]
+		table.remove(pending, id + 4)
+		table.remove(pending, id + 3)
+		table.remove(pending, id + 2)
+		table.remove(pending, id + 1)
+		table.remove(pending, id)
+		pending[guid] = nil
+	end
+	
+	-- Redo all the id maps
+	for i=1, #(pending), 5 do
+		pending[pending[i]] = i
 	end
 end
 
