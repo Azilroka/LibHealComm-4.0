@@ -1319,7 +1319,8 @@ function HealComm:ZONE_CHANGED_NEW_AREA()
 		
 		-- Changes the value of Necrotic Poison based on zone type, if there are more difficulty type MS's I'll support those too
 		-- Heroic = 90%, Non-Heroic = 75%
-		if( GetRaidDifficulty() == 2 or GetRaidDifficulty() == 4 ) then
+		-- The chinese version of WoW is still running 3.1.x apparently, so just add this as a quick fix so it won't error as I don't remember the previous version of GetRaidDifficulty offhand
+		if( GetRaidDifficulty and ( GetRaidDifficulty() == 2 or GetRaidDifficulty() == 4 ) ) then
 			healingModifiers[GetSpellInfo(53121)] = 0.25
 		else
 			healingModifiers[GetSpellInfo(53121)] = 0.10
