@@ -4,6 +4,7 @@
 ## Author: Shadowed
 ## X-Category: Library
 
+libs\LibStub\LibStub.lua
 libs\CallbackHandler-1.0\Callbackhandler-1.0.xml
 
 LibHealComm-4.0.xml
