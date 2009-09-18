@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 23
+local minor = 24
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -231,21 +231,18 @@ HealComm.getRecord = getRecord
 HealComm.updateRecord = updateRecord
 
 -- Removes all pending heals, if it's a group that is causing the clear then we won't remove the players heals on themselves
-local function clearPendingHeals(onlyGroup)
+local function clearPendingHeals()
 	for casterGUID, spells in pairs(pendingHeals) do
 		for _, pending in pairs(spells) do
 			if( pending.bitType ) then
-				table.wipe(tempPlayerList)
-				for i=#(pending), 1, -5 do
-					local guid = pending[i - 4]
-					if( not onlyGroup or ( onlyGroup and casterGUID ~= playerGUID and guid ~= playerGUID ) ) then
-						table.insert(tempPlayerList, guid)
-					end
-				end
+ 				table.wipe(tempPlayerList)
+				for i=#(pending), 1, -5 do table.insert(tempPlayerList, pending[i - 4]) end
 				
 				if( #(tempPlayerList) > 0 ) then
-					HealComm.callbacks:Fire("HealComm_HealStopped", casterGUID, pending.spellID, pending.bitType, true, unpack(tempPlayerList))
+					local spellID, bitType = pending.spellID, pending.bitType
 					table.wipe(pending)
+					
+					HealComm.callbacks:Fire("HealComm_HealStopped", casterGUID, spellID, bitType, true, unpack(tempPlayerList))
 				end
 			end
 		end
@@ -1654,7 +1651,7 @@ local function parseHealEnd(casterGUID, pending, checkField, spellID, interrupte
 			removeRecord(pending, guid)
 		end
 	end
-		
+	
 	-- Double check and make sure we actually removed at least one person
 	if( #(tempPlayerList) > 0 ) then
 		-- Heals that also have a bomb associated to them have to end at this point, they will fire there own callback too
@@ -1662,12 +1659,13 @@ local function parseHealEnd(casterGUID, pending, checkField, spellID, interrupte
 		if( bombPending and bombPending.bitType ) then
 			parseHealEnd(casterGUID, bombPending, "name", spellID, interrupted, ...)
 		end
-
-		HealComm.callbacks:Fire("HealComm_HealStopped", casterGUID, spellID, pending.bitType, interrupted, unpack(tempPlayerList))
-	end
 	
-	-- Remove excess data if there is nothing else pending
-	if( #(pending) == 0 ) then table.wipe(pending) end
+		local bitType = pending.bitType
+		-- Clear data if we're done
+		if( #(pending) == 0 ) then table.wipe(pending) end
+		
+		HealComm.callbacks:Fire("HealComm_HealStopped", casterGUID, spellID, bitType, interrupted, unpack(tempPlayerList))
+	end
 end
 
 -- Heal delayed
@@ -2155,13 +2153,13 @@ local function sanityCheckMapping()
 	for guid, unit in pairs(guidToUnit) do
 		if( not UnitExists(unit) or UnitGUID(unit) ~= guid ) then
 			guidToUnit[guid] = nil
-			guidToGroup[guid] = nil
-			
+			guidToGroup[guid] = nil			
+						
 			-- Check for (and remove) any active heals
 			if( pendingHeals[guid] ) then
 				for id, pending in pairs(pendingHeals[guid]) do
 					if( pending.bitType ) then
-						parseHealEnd(guid, pending, nil, spell.spellID, true)
+						parseHealEnd(guid, pending, nil, pending.spellID, true)
 					end
 				end
 				
@@ -2174,7 +2172,7 @@ end
 -- Once we leave a group all of the table data we had should be reset completely to release the tables into memory
 local wasInParty, wasInRaid
 local function clearGUIDData()
-	clearPendingHeals(true)
+	clearPendingHeals()
 	
 	-- Clear all cached GUID compressers
 	table.wipe(compressGUID)
@@ -2183,7 +2181,7 @@ local function clearGUIDData()
 	-- Reset our mappings
 	HealComm.guidToUnit, HealComm.guidToGroup = {[UnitGUID("player")] = "player"}, {}
 	guidToUnit, guidToGroup = HealComm.guidToUnit, HealComm.guidToGroup
-	
+		
 	-- And also reset all pending data
 	HealComm.pendingHeals = {}
 	pendingHeals = HealComm.pendingHeals
@@ -2196,10 +2194,11 @@ end
 
 -- Keeps track of pet GUIDs, as pets are considered vehicles this will also map vehicle GUIDs to unit
 function HealComm:UNIT_PET(unit)
-	unit = self.unitToPet[unit]
-	local guid = unit and UnitGUID(unit)
+	local pet = self.unitToPet[unit]
+	local guid = pet and UnitGUID(pet)
 	if( guid ) then
-		guidToUnit[guid] = unit
+		guidToUnit[guid] = pet
+		guidToGroup[guid] = guidToGroup[UnitGUID(unit)]
 	end
 end
 
@@ -2217,15 +2216,17 @@ function HealComm:PARTY_MEMBERS_CHANGED()
 	
 	-- Parties are not considered groups in terms of API, so fake it and pretend they are all in group 0
 	guidToGroup[UnitGUID("player")] = 0
+	if( not wasInParty ) then self:UNIT_PET("player") end
 	
 	for i=1, MAX_PARTY_MEMBERS do
 		local unit = "party" .. i
 		if( UnitExists(unit) ) then
+			local lastGroup = guidToGroup[guid]
 			local guid = UnitGUID(unit)
 			guidToUnit[guid] = unit
 			guidToGroup[guid] = 0
 			
-			if( not wasInParty ) then
+			if( not wasInParty or lastGroup ~= guidToGroup[guid] ) then
 				self:UNIT_PET(unit)
 			end
 		end
@@ -2251,11 +2252,13 @@ function HealComm:RAID_ROSTER_UPDATE()
 	for i=1, MAX_RAID_MEMBERS do
 		local unit = "raid" .. i
 		if( UnitExists(unit) ) then
+			local lastGroup = guidToGroup[guid]
 			local guid = UnitGUID(unit)
 			guidToUnit[guid] = unit
 			guidToGroup[guid] = select(3, GetRaidRosterInfo(i))
 			
-			if( not wasInRaid ) then
+			-- If the pets owners group changed then the pets group should be updated too
+			if( not wasInRaid or guidToGroup[guid] ~= lastGroup ) then
 				self:UNIT_PET(unit)
 			end
 		end
@@ -2336,7 +2339,6 @@ function HealComm:OnInitialize()
 	self.frame:RegisterEvent("GLYPH_ADDED")
 	self.frame:RegisterEvent("GLYPH_REMOVED")
 	self.frame:RegisterEvent("GLYPH_UPDATED")
-	self.frame:RegisterEvent("UNIT_PET")
 	self.frame:RegisterEvent("UNIT_AURA")
 	
 	if( self.initialized ) then return end
@@ -2371,6 +2373,7 @@ HealComm.frame:UnregisterAllEvents()
 HealComm.frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 HealComm.frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 HealComm.frame:RegisterEvent("RAID_ROSTER_UPDATE")
+HealComm.frame:RegisterEvent("UNIT_PET")
 HealComm.frame:SetScript("OnEvent", OnEvent)
 
 if( not isHealerClass ) then return end
