@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 24
+local minor = 25
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -356,7 +356,8 @@ function HealComm:GetOthersHealAmount(guid, bitFlag, time)
 end
 
 function HealComm:GetCasterHealAmount(guid, bitFlag, time)
-	return pendingHeals[guid] and filterData(pendingHeals[guid], nil, bitFlag, time, true) or 0
+	local amount = pendingHeals[guid] and filterData(pendingHeals[guid], nil, bitFlag, time, true) or 0
+	return amount > 0 and amount or nil
 end
 
 -- Healing class data
@@ -1901,7 +1902,7 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 				-- Plant the bomb
 				local bombPending = pending.hasBomb and pendingHeals[sourceGUID][spellName]
 				if( bombPending and bombPending.bitType ) then
-					local bombAmount = getRcord(bombPending, destGUID)
+					local bombAmount = getRecord(bombPending, destGUID)
 					if( bombAmount ) then
 						parseHotBomb(sourceGUID, true, spellID, bombAmount, compressGUID[destGUID])
 						sendMessage(string.format("UB::%d:%d:%s:%d:%d:%s", spellID, bombAmount, compressGUID[destGUID], amount, pending.tickInterval, compressGUID[destGUID]))
@@ -2181,7 +2182,7 @@ local function clearGUIDData()
 	-- Reset our mappings
 	HealComm.guidToUnit, HealComm.guidToGroup = {[UnitGUID("player")] = "player"}, {}
 	guidToUnit, guidToGroup = HealComm.guidToUnit, HealComm.guidToGroup
-		
+	
 	-- And also reset all pending data
 	HealComm.pendingHeals = {}
 	pendingHeals = HealComm.pendingHeals
