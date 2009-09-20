@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 25
+local minor = 26
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -2153,9 +2153,6 @@ HealComm.UseAction = HealComm.CastSpell
 local function sanityCheckMapping()
 	for guid, unit in pairs(guidToUnit) do
 		if( not UnitExists(unit) or UnitGUID(unit) ~= guid ) then
-			guidToUnit[guid] = nil
-			guidToGroup[guid] = nil			
-						
 			-- Check for (and remove) any active heals
 			if( pendingHeals[guid] ) then
 				for id, pending in pairs(pendingHeals[guid]) do
@@ -2166,6 +2163,9 @@ local function sanityCheckMapping()
 				
 				pendingHeals[guid] = nil
 			end
+
+			guidToUnit[guid] = nil
+			guidToGroup[guid] = nil			
 		end
 	end
 end
@@ -2180,7 +2180,7 @@ local function clearGUIDData()
 	table.wipe(decompressGUID)
 	
 	-- Reset our mappings
-	HealComm.guidToUnit, HealComm.guidToGroup = {[UnitGUID("player")] = "player"}, {}
+	HealComm.guidToUnit, HealComm.guidToGroup = {[playerGUID] = "player"}, {}
 	guidToUnit, guidToGroup = HealComm.guidToUnit, HealComm.guidToGroup
 	
 	-- And also reset all pending data
@@ -2216,7 +2216,7 @@ function HealComm:PARTY_MEMBERS_CHANGED()
 	end
 	
 	-- Parties are not considered groups in terms of API, so fake it and pretend they are all in group 0
-	guidToGroup[UnitGUID("player")] = 0
+	guidToGroup[playerGUID] = 0
 	if( not wasInParty ) then self:UNIT_PET("player") end
 	
 	for i=1, MAX_PARTY_MEMBERS do
