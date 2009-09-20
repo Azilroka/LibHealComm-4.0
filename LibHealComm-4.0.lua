@@ -2180,6 +2180,8 @@ local function clearGUIDData()
 	table.wipe(decompressGUID)
 	
 	-- Reset our mappings
+	-- UnitGUID("player") seems to return nil if a group is disbanded while zoning, odd but this will fix that
+	playerGUID = playerGUID or UnitGUID("player")
 	HealComm.guidToUnit, HealComm.guidToGroup = {[playerGUID] = "player"}, {}
 	guidToUnit, guidToGroup = HealComm.guidToUnit, HealComm.guidToGroup
 	
@@ -2216,7 +2218,7 @@ function HealComm:PARTY_MEMBERS_CHANGED()
 	end
 	
 	-- Parties are not considered groups in terms of API, so fake it and pretend they are all in group 0
-	guidToGroup[playerGUID] = 0
+	guidToGroup[UnitGUID("player")] = 0
 	if( not wasInParty ) then self:UNIT_PET("player") end
 	
 	for i=1, MAX_PARTY_MEMBERS do
@@ -2277,6 +2279,9 @@ end
 
 -- Initialize the library
 function HealComm:OnInitialize()
+	playerGUID = UnitGUID("player")
+	playerName = UnitName("player")
+
 	-- If another instance already loaded then the tables should be wiped to prevent old data from persisting
 	-- in case of a spell being removed later on, this is only really going to happen if you LoD a new version like that.
 	table.wipe(spellData)
@@ -2302,9 +2307,6 @@ function HealComm:OnInitialize()
 	end
 
 	-- Oddly enough player GUID is not available on file load, so keep the map of player GUID to themselves too
-	playerGUID = UnitGUID("player")
-	playerName = UnitName("player")
-	
 	guidToUnit[playerGUID] = "player"
 	
 	self:PLAYER_EQUIPMENT_CHANGED()
