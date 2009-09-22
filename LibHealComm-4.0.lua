@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 26
+local minor = 27
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -10,17 +10,19 @@ local COMM_PREFIX = "LHC40"
 local playerGUID, playerName
 
 HealComm.callbacks = HealComm.callbacks or LibStub:GetLibrary("CallbackHandler-1.0"):New(HealComm)
+HealComm.spellData = HealComm.spellData or {}
+HealComm.hotData = HealComm.hotData or {}
+HealComm.talentData = HealComm.talentData or {}
+HealComm.itemSetsData = HealComm.itemSetsData or {}
 HealComm.glyphCache = HealComm.glyphCache or {}
+HealComm.equippedSetCache = HealComm.equippedSetCache or {}
 HealComm.playerModifiers = HealComm.playerModifiers or {}
 HealComm.guidToGroup = HealComm.guidToGroup or {}
 HealComm.guidToUnit = HealComm.guidToUnit or {}
 HealComm.pendingHeals = HealComm.pendingHeals or {}
-HealComm.spellData = HealComm.spellData or {}
-HealComm.hotData = HealComm.hotData or {}
-HealComm.equippedSetPieces = HealComm.equippedSetPieces or {}
-HealComm.itemSetsData = HealComm.itemSetsData or {}
-HealComm.talentData = HealComm.talentData or {}
 HealComm.tempPlayerList = HealComm.tempPlayerList or {}
+HealComm.activePets = HealComm.activePets or {}
+HealComm.activeHots = HealComm.activeHots or {}
 
 if( not HealComm.unitToPet ) then
 	HealComm.unitToPet = {["player"] = "pet"}
@@ -30,7 +32,8 @@ end
 	
 
 local spellData, hotData, tempPlayerList, pendingHeals = HealComm.spellData, HealComm.hotData, HealComm.tempPlayerList, HealComm.pendingHeals
-local equippedSetPieces, itemSetsData, talentData = HealComm.equippedSetPieces, HealComm.itemSetsData, HealComm.talentData
+local equippedSetCache, itemSetsData, talentData = HealComm.equippedSetCache, HealComm.itemSetsData, HealComm.talentData
+local activeHots, activePets = HealComm.activeHots, HealComm.activePets
 
 -- Figure out what they are now since a few things change based off of this
 local playerClass = select(2, UnitClass("player"))
@@ -126,7 +129,7 @@ if( not HealComm.spellToID ) then
 	})
 end
 
--- This gets filled out after data has been loaded, this is only for casted heals. Hots just directly pull from ave
+-- This gets filled out after data has been loaded, this is only for casted heals. Hots just directly pull from the averages as they do not increase in power with level, Cataclysm will change this though.
 HealComm.averageHeal = HealComm.averageHeal or {}
 HealComm.averageHealMT = HealComm.averageHealMT or {
 	__index = function(tbl, index)
@@ -142,7 +145,6 @@ HealComm.averageHealMT = HealComm.averageHealMT or {
 		end
 		
 		local average = spellData.averages[rank]
-		-- If the player is at the level cap, then we don't need to do any fancy mathery and just add the full increase
 		if( playerLevel >= MAX_PLAYER_LEVEL ) then
 			average = average + spellData.increase[rank]
 		-- Here's how this works: If a spell increases 1,000 between 70 and 80, the player is level 75 the spell is 70
@@ -159,6 +161,7 @@ HealComm.averageHealMT = HealComm.averageHealMT or {
 local function updateRecord(pending, guid, amount, stack, endTime, ticksLeft)
 	if( pending[guid] ) then
 		local id = pending[guid]
+		
 		pending[id] = guid
 		pending[id + 1] = amount
 		pending[id + 2] = stack
@@ -166,12 +169,16 @@ local function updateRecord(pending, guid, amount, stack, endTime, ticksLeft)
 		pending[id + 4] = ticksLeft or 0
 	else
 		pending[guid] = #(pending) + 1
-
 		table.insert(pending, guid)
 		table.insert(pending, amount)
 		table.insert(pending, stack)
 		table.insert(pending, endTime or 0)
 		table.insert(pending, ticksLeft or 0)
+
+		if( pending.bitType == HOT_HEALS ) then
+			activeHots[guid] = (activeHots[guid] or 0) + 1
+			HealComm.hotMonitor:Show()
+		end
 	end
 end
 
@@ -187,13 +194,18 @@ local function removeRecord(pending, guid)
 	local id = pending[guid]
 	if( not id ) then return nil end
 	
-	-- guid, amount, stack, endTime, ticksLeft
+	-- ticksLeft, endTime, stack, amount, guid
 	table.remove(pending, id + 4)
 	table.remove(pending, id + 3)
 	table.remove(pending, id + 2)
 	table.remove(pending, id + 1)
 	table.remove(pending, id)
 	pending[guid] = nil
+	
+	if( activeHots[guid] ) then
+		activeHots[guid] = activeHots[guid] - 1
+		activeHots[guid] = activeHots[guid] > 0 and activeHots[guid] or nil
+	end
 	
 	-- Shift any records after this ones index down 5 to account for the removal
 	for i=1, #(pending), 5 do
@@ -210,6 +222,7 @@ local function removeRecordList(pending, inc, comp, ...)
 		guid = comp and decompressGUID[guid] or guid
 		
 		local id = pending[guid]
+		-- ticksLeft, endTime, stack, amount, guid
 		table.remove(pending, id + 4)
 		table.remove(pending, id + 3)
 		table.remove(pending, id + 2)
@@ -221,6 +234,42 @@ local function removeRecordList(pending, inc, comp, ...)
 	-- Redo all the id maps
 	for i=1, #(pending), 5 do
 		pending[pending[i]] = i
+	end
+end
+
+-- Removes every mention to the given GUID
+local function removeAllRecords(pending, guid)
+	local changed
+	for _, spells in pairs(pendingHeals) do
+		for _, pending in pairs(spells) do
+			if( pending.bitType and pending[guid] ) then
+				local id = pending[guid]
+				
+				-- ticksLeft, endTime, stack, amount, guid
+				table.remove(pending, id + 4)
+				table.remove(pending, id + 3)
+				table.remove(pending, id + 2)
+				table.remove(pending, id + 1)
+				table.remove(pending, id)
+				pending[guid] = nil
+				
+				-- Shift everything back
+				for i=1, #(pending), 5 do
+					local guid = pending[i]
+					if( pending[guid] > id ) then
+						pending[guid] = pending[guid] - 5
+					end
+				end
+				
+				changed = true
+			end
+		end
+	end
+	
+	activeHots[guid] = nil
+	
+	if( changed ) then
+		HealComm.callbacks:Fire("HealComm_GUIDDisappeared", guid)
 	end
 end
 
@@ -302,23 +351,21 @@ local function filterData(spells, filterGUID, bitFlag, time, ignoreGUID)
 					if( ( pending.bitType == DIRECT_HEALS or pending.bitType == BOMB_HEALS ) and ( not time or endTime <= time ) ) then
 						healAmount = healAmount + amount * stack
 					-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
-					elseif( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) then
-						if( endTime > currentTime ) then
-							local ticksLeft = pending[i + 4]
-							if( not time or time >= endTime ) then
-								healAmount = healAmount + (amount * stack) * ticksLeft
-							else
-								local secondsLeft = endTime - currentTime
-								local bandSeconds = time - currentTime
-								local ticks = math.floor(math.min(bandSeconds, secondsLeft) / pending.tickInterval)
-								local nextTickIn = secondsLeft % pending.tickInterval
-								local fractionalBand = bandSeconds % pending.tickInterval
-								if( nextTickIn > 0 and nextTickIn < fractionalBand ) then
-									ticks = ticks + 1
-								end
-								
-								healAmount = healAmount + (amount * stack) * math.min(ticks, ticksLeft)
+					elseif( ( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) and endTime > currentTime ) then
+						local ticksLeft = pending[i + 4]
+						if( not time or time >= endTime ) then
+							healAmount = healAmount + (amount * stack) * ticksLeft
+						else
+							local secondsLeft = endTime - currentTime
+							local bandSeconds = time - currentTime
+							local ticks = math.floor(math.min(bandSeconds, secondsLeft) / pending.tickInterval)
+							local nextTickIn = secondsLeft % pending.tickInterval
+							local fractionalBand = bandSeconds % pending.tickInterval
+							if( nextTickIn > 0 and nextTickIn < fractionalBand ) then
+								ticks = ticks + 1
 							end
+							
+							healAmount = healAmount + (amount * stack) * math.min(ticks, ticksLeft)
 						end
 					end
 				end
@@ -374,7 +421,7 @@ end
 
 -- Note because I always forget on the order:
 -- Talents that effective the coeffiency of spell power to healing are first and are tacked directly onto the coeffiency (Empowered Rejuvenation)
--- Penalty modifiers (downranking/spell too low) are applied directly to the spell power
+-- Penalty modifiers (downranking/spell level too low) are applied directly to the spell power
 -- Spell power modifiers are then applied to the spell power
 -- Heal modifiers are applied after all of that
 -- Crit modifiers are applied after
@@ -421,9 +468,10 @@ end
 	
 	"compressedGUID1,compressedGUID2,compressedGUID3,compressedGUID4", healthAmount
 	Or if you need to set specific healing values for one GUID it should be
-	"compressedGUID1,healthAmount1,compressedGUID2,healAmount2,compressedGUID3,healAmount3,compressedGUID4,healAmount4", nil
+	"compressedGUID1,healthAmount1,compressedGUID2,healAmount2,compressedGUID3,healAmount3", -1
 	
 	The latter is for cases like Glyph of Healing Wave where you need a heal for 1,000 on A and a heal for 200 on the player for B without sending 2 events.
+	The -1 tells the library to look in the GUId list for the heal amounts
 	
 	**NOTE** Any GUID returned from GetHealTargets must be compressed through a call to compressGUID[guid]
 ]]
@@ -636,12 +684,12 @@ if( playerClass == "DRUID" ) then
 				end
 				
 				-- Apply any hot specific bonuses
-				local hots = hotTotals[guid] or 0
-				if( hots > 0 ) then
+				local hots = hotTotals[guid]
+				if( hots and hots > 0 ) then
 					local bonus = 1.20
 					
-					-- T7 Resto, +5% healing for each of our hots on them
-					if( equippedSetPieces["T7 Resto"] >= 2 ) then
+					-- T7 Resto, +5% healing per each of the players hot on their target
+					if( equippedSetCache["T7 Resto"] >= 2 ) then
 						bonus = bonus + 0.05 * hots
 					end
 					
@@ -670,7 +718,7 @@ if( playerClass == "DRUID" ) then
 				end
 	
 				-- Rank 1 - 3: 1.5/2/2.5 cast time, Rank 4+: 3 cast time
-				local castTime = rank > 3 and 3 or rank == 3 and 2.5 or rank == 2 and 2 or rank == 1 and 1.5
+				local castTime = rank > 3 and 3 or rank == 3 and 2.5 or rank == 2 and 2 or 1.5
 				spellPower = spellPower * (((castTime / 3.5) * 1.88) + talentData[EmpoweredTouch].current)
 	
 			-- Tranquility
@@ -930,7 +978,7 @@ if( playerClass == "PRIEST" ) then
 				healModifier = healModifier + talentData[ImprovedRenew].current
 				healModifier = healModifier + talentData[TwinDisciplines].current
 				
-				-- Glyph of Renew, one less tick for +25% healing per tick. Given that this is supposed to keep overall healing the same, just healing faster it's going to be an additive modifier.
+				-- Glyph of Renew, one less tick for +25% healing per tick. As this heals the same just faster, it has to be a flat 25% modifier
 				if( glyphCache[55674] ) then
 					healModifier = healModifier + 0.25
 				end
@@ -1095,7 +1143,7 @@ if( playerClass == "SHAMAN" ) then
 			healModifier = healModifier + talentData[Purification].current
 			
 			if( spellName == Riptide ) then
-				if( equippedSetPieces["T9 Resto"] >= 2 ) then
+				if( equippedSetCache["T9 Resto"] >= 2 ) then
 					spModifier = spModifier * 1.20
 				end
 				
@@ -1127,7 +1175,7 @@ if( playerClass == "SHAMAN" ) then
 				healModifier = healModifier * (1 + talentData[ImpChainHeal].current)
 				healAmount = healAmount + (playerCurrentRelic and chTotems[playerCurrentRelic] or 0)			
 	
-				if( equippedSetPieces["T7 Resto"] >= 4 ) then
+				if( equippedSetCache["T7 Resto"] >= 4 ) then
 					healModifier = healModifier * 1.05
 				end
 	
@@ -1142,7 +1190,7 @@ if( playerClass == "SHAMAN" ) then
 			elseif( spellName == HealingWave ) then
 				healModifier = healModifier * (talentData[HealingWay].spent == 3 and 1.25 or talentData[HealingWay].spent == 2 and 1.16 or talentData[HealingWay].spent == 1 and 1.08 or 1)
 				
-				if( equippedSetPieces["T7 Resto"] >= 4 ) then
+				if( equippedSetCache["T7 Resto"] >= 4 ) then
 					healModifier = healModifier * 1.05
 				end
 							
@@ -1199,8 +1247,7 @@ local function getName(spellID)
 	return name or ""
 end
 
--- There is one spell currently that has a name conflict, which is ray of Pain from the Void Walkers in Nagrand
--- if it turns out there are more later on (which is doubtful) I'll change it
+-- The only spell in the game with a name conflict is Ray of Pain from the Nagrand Void Walkers
 HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(30843)] = 0.00, -- Enfeeble
 	[getName(41292)] = 0.00, -- Aura of Suffering
@@ -1210,7 +1257,7 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(34366)] = 0.25, -- Ebon Poison
 	[getName(19716)] = 0.25, -- Gehennas' Curse
 	[getName(24674)] = 0.25, -- Veil of Shadow
-	-- Despite the fact that Wound Poison uses the same 50% now, it's a unique spellID/spellName for each rank
+	-- Wound Poison still uses a unique spellID/spellName despite the fact that it's a static 50% reduction.
 	[getName(13218)] = 0.50, -- 1
 	[getName(13222)] = 0.50, -- 2
 	[getName(13223)] = 0.50, -- 3
@@ -1247,7 +1294,6 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(41350)] = 2.00, -- Aura of Desire
 }
 
--- Easier to toss functions on 4 extra functions than add extra checks
 HealComm.healingStackMods = HealComm.healingStackMods or {
 	-- Tenacity
 	[getName(58549)] = function(name, rank, icon, stacks) return icon == "Interface\\Icons\\Ability_Warrior_StrengthOfArms" and stacks ^ 1.18 or 1 end,
@@ -1317,6 +1363,7 @@ function HealComm:ZONE_CHANGED_NEW_AREA()
 		
 		updateDistributionChannel()
 		clearPendingHeals()
+		table.wipe(activeHots)
 		
 		-- Changes the value of Necrotic Poison based on zone type, if there are more difficulty type MS's I'll support those too
 		-- Heroic = 90%, Non-Heroic = 75%
@@ -1453,10 +1500,10 @@ function HealComm:PLAYER_EQUIPMENT_CHANGED()
 	-- Caches set bonus info, as you can't reequip set bonus gear in combat no sense in checking it
 	if( not InCombatLockdown() ) then
 		for name, items in pairs(itemSetsData) do
-			equippedSetPieces[name] = 0
+			equippedSetCache[name] = 0
 			for _, itemID in pairs(items) do
 				if( IsEquippedItem(itemID) ) then
-					equippedSetPieces[name] = equippedSetPieces[name] + 1
+					equippedSetCache[name] = equippedSetCache[name] + 1
 				end
 			end
 		end
@@ -1631,7 +1678,7 @@ local function parseHealEnd(casterGUID, pending, checkField, spellID, interrupte
 	local spellName = GetSpellInfo(spellID)
 	if( not spellName or not pendingHeals[casterGUID] ) then return end
 	
-	-- Hots should use spellIDs, casts/channels/bombs should use spell names. This will keep everything happy for things like Regrowth with a heal and a hot
+	-- Hots use spell IDs while everything else uses spell names. Avoids naming conflicts for multi-purpose spells such as Lifebloom or Regrowth
 	if( not pending ) then
 		pending = checkField == "id" and pendingHeals[casterGUID][spellID] or pendingHeals[casterGUID][spellName]
 	end
@@ -1654,19 +1701,19 @@ local function parseHealEnd(casterGUID, pending, checkField, spellID, interrupte
 	end
 	
 	-- Double check and make sure we actually removed at least one person
-	if( #(tempPlayerList) > 0 ) then
-		-- Heals that also have a bomb associated to them have to end at this point, they will fire there own callback too
-		local bombPending = pending.hasBomb and pendingHeals[casterGUID][spellName]
-		if( bombPending and bombPending.bitType ) then
-			parseHealEnd(casterGUID, bombPending, "name", spellID, interrupted, ...)
-		end
+	if( #(tempPlayerList) == 0 ) then return end
 	
-		local bitType = pending.bitType
-		-- Clear data if we're done
-		if( #(pending) == 0 ) then table.wipe(pending) end
-		
-		HealComm.callbacks:Fire("HealComm_HealStopped", casterGUID, spellID, bitType, interrupted, unpack(tempPlayerList))
+	-- Heals that also have a bomb associated to them have to end at this point, they will fire there own callback too
+	local bombPending = pending.hasBomb and pendingHeals[casterGUID][spellName]
+	if( bombPending and bombPending.bitType ) then
+		parseHealEnd(casterGUID, bombPending, "name", spellID, interrupted, ...)
 	end
+
+	local bitType = pending.bitType
+	-- Clear data if we're done
+	if( #(pending) == 0 ) then table.wipe(pending) end
+	
+	HealComm.callbacks:Fire("HealComm_HealStopped", casterGUID, spellID, bitType, interrupted, unpack(tempPlayerList))
 end
 
 -- Heal delayed
@@ -1697,11 +1744,9 @@ local function parseHealDelayed(casterGUID, startTime, endTime, spellName)
 end
 
 -- After checking around 150-200 messages in battlegrounds, server seems to always be passed (if they are from another server)
--- so the casterGUID isn't needed to be sent, I'll keep it around in case it does, but it also gives expansion potentional without breaking compatibility
--- The reason channels use tick total and hots use tick interval, is because channels have their total channel time modified by haste but the ticks are not increased via talents
--- whereas hots have talents to modify duration but not tick frequency
+-- Channels use tick total because the tick interval varies by haste
+-- Hots use tick interval because the total duration varies but the tick interval stays the same
 function HealComm:CHAT_MSG_ADDON(prefix, message, channel, sender)
-	-- Reject any comm in a distribution we aren't watching
 	if( prefix ~= COMM_PREFIX or channel ~= distribution or sender == playerName ) then return end
 	
 	local commType, _, spellID, arg1, arg2, arg3, arg4, arg5, arg6 = string.split(":", message)
@@ -1749,9 +1794,8 @@ function HealComm:CHAT_MSG_ADDON(prefix, message, channel, sender)
 	end
 end
 
--- Some heals like Tranquility hit multiple people, and firing 5 events * ticks is inefficient, instead if we expect them
--- to be hitting multiple people they'll be saved until the next frame update
--- Bucketing needs some work, I am probably going to move it to a slightly more abstract system so I can use it for things like aura modifiers too
+-- Bucketing reduces the number of events triggered for heals such as Tranquility that hit multiple targets
+-- instead of firing 5 events * ticks it will fire 1 (maybe 2 depending on lag) events
 HealComm.bucketHeals = HealComm.bucketHeals or {}
 local bucketHeals = HealComm.bucketHeals
 local BUCKET_FILLED = 0.30
@@ -1812,9 +1856,8 @@ local CAN_HEAL = bit.bor(COMBATLOG_OBJECT_REACTION_FRIENDLY, COMBATLOG_OBJECT_RE
 function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags, ...)
 	if( not eventRegistered[eventType] ) then return end
 	
-	-- Heal or hot ticked that we have data on
-	-- this is a logic update because it's more efficient (especially with 20 hots going) to keep track of it logically
-	-- rather than spamming the comm channel whenever a hot ticks.
+	-- Heal or hot ticked that the library is tracking
+	-- It's more efficient/accurate to have the library keep track of this locally, spamming the comm channel would not be a very good thing especially when a single player can have 4 - 8 hots/channels going on them.
 	if( eventType == "SPELL_HEAL" or eventType == "SPELL_PERIODIC_HEAL" ) then
 		local spellID, spellName, spellSchool = ...
 		local pending = sourceGUID and pendingHeals[sourceGUID] and (pendingHeals[sourceGUID][spellID] or pendingHeals[sourceGUID][spellName])
@@ -1941,8 +1984,8 @@ local lastFriendlyGUID, lastFriendlyName, lastGUID, lastName, lastIsFriend
 local castGUIDs, guidPriorities = {}, {}
 
 -- Deals with the fact that functions are called differently
--- Why a table when you can only cast one spell at a time you ask? When you factor in lag and mash clicking it's possible to
--- cast A, interrupt it, cast B and have A fire SUCEEDED before B does, this prevents data from being messed up that way.
+-- Why a table when you can only cast one spell at a time you ask? When you factor in lag and mash clicking it's possible to:
+-- cast A, interrupt it, cast B and have A fire SUCEEDED before B does, the tables keeps it from bugging out
 local function setCastData(priority, name, guid)
 	if( not guid or not lastSentID ) then return end
 	if( guidPriorities[lastSentID] and guidPriorities[lastSentID] >= priority ) then return end
@@ -1958,10 +2001,6 @@ end
 
 -- When the game tries to figure out the UnitID from the name it will prioritize players over non-players
 -- if there are conflicts in names it will pull the one with the least amount of current health
-
--- This would be another way of getting GUIDs, by keeping a map and marking conflicts due to pets (or vehicles)
--- we would know that you can't rely on the name exactly and that the other methods are needed. While they seem
--- to be accurate and not have any issues, it could be a good solution as a better safe than sorry option.
 function HealComm:UNIT_SPELLCAST_SENT(unit, spellName, spellRank, castOn)
 	if( unit ~= "player" or not spellData[spellName] or not averageHeal[spellName][spellRank] ) then return end
 	
@@ -1969,7 +2008,7 @@ function HealComm:UNIT_SPELLCAST_SENT(unit, spellName, spellRank, castOn)
 	lastSentID = spellName .. spellRank
 	
 	-- Self cast is off which means it's possible to have a spell waiting for a target.
-	-- It's possible that it's the mouseover unit, but if we see a *TargetUnit call then we know it's that unit for sure
+	-- It's possible that it's the mouseover unit, but if a Target, TargetLast or AssistUnit call comes right after it means it's casting on that instead instead.
 	if( hadTargetingCursor ) then
 		hadTargetingCursor = nil
 		self.resetFrame:Show()
@@ -2097,7 +2136,6 @@ HealComm.TargetUnit = HealComm.Target
 HealComm.SpellTargetUnit = HealComm.Target
 
 -- Used in /assist macros
--- The client should only be able to assist someone if it has data on them, which means the UI has data on them
 function HealComm:AssistUnit(unit)
 	if( self.resetFrame:IsShown() and UnitCanAssist("player", unit .. "target") ) then
 		setCastData(6, UnitName(unit .. "target"), UnitGUID(unit .. "target"))
@@ -2163,29 +2201,67 @@ local function sanityCheckMapping()
 				
 				pendingHeals[guid] = nil
 			end
-
+			
+			-- Remove any heals that are on them
+			removeAllRecords(guid)
+		
 			guidToUnit[guid] = nil
 			guidToGroup[guid] = nil			
 		end
 	end
 end
 
--- Once we leave a group all of the table data we had should be reset completely to release the tables into memory
+-- 5s poll that tries to solve the problem of X running out of range while a HoT is ticking
+-- this is not really perfect far from it in fact. If I can find a better solution I will switch to that.
+if( not HealComm.hotMonitor ) then
+	HealComm.hotMonitor = CreateFrame("Frame")
+	HealComm.hotMonitor:Hide()
+	HealComm.hotMonitor.timeElapsed = 0
+	HealComm.hotMonitor:SetScript("OnUpdate", function(self, elapsed)
+		self.timeElapsed = self.timeElapsed + elapsed
+		if( self.timeElapsed < 5 ) then return end
+		self.timeElapsed = self.timeElapsed - 5
+		
+		-- For the time being, it will only remove them if they don't exist and it found a valid unit
+		-- units that leave the raid are automatically removed 
+		local found
+		for guid in pairs(activeHots) do
+			if( guidToUnit[guid] and not UnitIsVisible(guidToUnit[guid]) ) then
+				removeAllRecords(guid)
+				
+				guidToUnit[guid] = nil
+				guidToGroup[guid] = nil
+			end
+		
+			found = true
+		end
+		
+		if( not found ) then
+			self:Hide()
+		end
+	end)
+end
+
+-- After the player leaves a group, tables are wiped out or released for GC
 local wasInParty, wasInRaid
 local function clearGUIDData()
 	clearPendingHeals()
 	
-	-- Clear all cached GUID compressers
 	table.wipe(compressGUID)
 	table.wipe(decompressGUID)
+	table.wipe(activePets)
 	
-	-- Reset our mappings
 	-- UnitGUID("player") seems to return nil if a group is disbanded while zoning, odd but this will fix that
 	playerGUID = playerGUID or UnitGUID("player")
-	HealComm.guidToUnit, HealComm.guidToGroup = {[playerGUID] = "player"}, {}
-	guidToUnit, guidToGroup = HealComm.guidToUnit, HealComm.guidToGroup
+	HealComm.guidToUnit = {[playerGUID] = "player"}
+	guidToUnit = HealComm.guidToUnit
 	
-	-- And also reset all pending data
+	HealComm.guidToGroup = {}
+	guidToGroup = HealComm.guidToGroup
+	
+	HealComm.activeHots = {}
+	activeHots = HealComm.activeHots
+	
 	HealComm.pendingHeals = {}
 	pendingHeals = HealComm.pendingHeals
 	
@@ -2202,6 +2278,14 @@ function HealComm:UNIT_PET(unit)
 	if( guid ) then
 		guidToUnit[guid] = pet
 		guidToGroup[guid] = guidToGroup[UnitGUID(unit)]
+		activePets[unit] = guid
+	-- This used to be an active pet, need to invalidate pending heals
+	elseif( activePets[unit] and guidToUnit[guid] ) then
+		removeAllRecords(guidToUnit[guid], activePets[unit])
+
+		guidToUnit[guid] = nil
+		guidToGroup[guid] = nil
+		activePets[unit] = nil
 	end
 end
 
@@ -2282,8 +2366,11 @@ function HealComm:OnInitialize()
 	playerGUID = UnitGUID("player")
 	playerName = UnitName("player")
 
+	-- Oddly enough player GUID is not available on file load, so keep the map of player GUID to themselves too
+	guidToUnit[playerGUID] = "player"
+
 	-- If another instance already loaded then the tables should be wiped to prevent old data from persisting
-	-- in case of a spell being removed later on, this is only really going to happen if you LoD a new version like that.
+	-- in case of a spell being removed later on, only can happen if a newer LoD version is loaded
 	table.wipe(spellData)
 	table.wipe(hotData)
 	table.wipe(itemSetsData)
@@ -2305,9 +2392,6 @@ function HealComm:OnInitialize()
 			glyphCache[id] = glyphID
 		end
 	end
-
-	-- Oddly enough player GUID is not available on file load, so keep the map of player GUID to themselves too
-	guidToUnit[playerGUID] = "player"
 	
 	self:PLAYER_EQUIPMENT_CHANGED()
 	self:ZONE_CHANGED_NEW_AREA()
