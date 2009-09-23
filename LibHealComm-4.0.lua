@@ -2446,10 +2446,14 @@ function HealComm:OnInitialize()
 	hooksecurefunc("SpellTargetUnit", function(...) HealComm:SpellTargetUnit(...) end)
 	hooksecurefunc("AssistUnit", function(...) HealComm:AssistUnit(...) end)
 	hooksecurefunc("UseAction", function(...) HealComm:UseAction(...) end)
-	hooksecurefunc("CastSpellByID", function(...) HealComm:CastSpellByID(...) end)
-	hooksecurefunc("CastSpellByName", function(...) HealComm:CastSpellByName(...) end)
 	hooksecurefunc("TargetLastFriend", function(...) HealComm:TargetLastFriend(...) end)
 	hooksecurefunc("TargetLastTarget", function(...) HealComm:TargetLastTarget(...) end)
+	hooksecurefunc("CastSpellByName", function(...) HealComm:CastSpellByName(...) end)
+	
+	-- Fixes hook error for people who are not on 3.2 yet
+	if( CastSpellByID ) then
+		hooksecurefunc("CastSpellByID", function(...) HealComm:CastSpellByID(...) end)
+	end
 end
 
 -- General event handler
