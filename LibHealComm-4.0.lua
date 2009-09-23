@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 28
+local minor = 29
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -133,12 +133,9 @@ end
 HealComm.averageHeal = HealComm.averageHeal or {}
 HealComm.averageHealMT = HealComm.averageHealMT or {
 	__index = function(tbl, index)
-		-- Hard stop so it won't stack overflow if index is requested
-		if( not tbl.spell or index == "spell" ) then return nil end
-		
 		local playerLevel = UnitLevel("player")
 		local rank = HealComm.rankNumbers[index]
-		local spellData = HealComm.spellData[tbl.spell]
+		local spellData = HealComm.spellData[rawget(tbl, "spell")]
 		local spellLevel = spellData.levels[rank]
 
 		-- No increase, it doesn't scale with level
@@ -653,7 +650,7 @@ if( playerClass == "DRUID" ) then
 			
 		-- Calcualte direct and channeled heals
 		CalculateHealing = function(guid, spellName, spellRank)
-			local healAmount = HealComm.averageHeal[spellName][spellRank]
+			local healAmount = averageHeal[spellName][spellRank]
 			local spellPower = GetSpellBonusHealing()
 			local healModifier, spModifier = playerHealModifier, 1
 			local rank = HealComm.rankNumbers[spellRank]
@@ -826,7 +823,7 @@ if( playerClass == "PALADIN" ) then
 	
 		-- If only every other class was as easy as Paladins
 		CalculateHealing = function(guid, spellName, spellRank)
-			local healAmount = HealComm.averageHeal[spellName][spellRank]
+			local healAmount = averageHeal[spellName][spellRank]
 			local spellPower = GetSpellBonusHealing()
 			local healModifier, spModifier = playerHealModifier, 1
 			local rank = HealComm.rankNumbers[spellRank]
@@ -997,7 +994,7 @@ if( playerClass == "PRIEST" ) then
 	
 		-- If only every other class was as easy as Paladins
 		CalculateHealing = function(guid, spellName, spellRank)
-			local healAmount = HealComm.averageHeal[spellName][spellRank]
+			local healAmount = averageHeal[spellName][spellRank]
 			local rank = HealComm.rankNumbers[spellRank]
 			local spellPower = GetSpellBonusHealing()
 			local healModifier, spModifier = playerHealModifier, 1
@@ -1166,7 +1163,7 @@ if( playerClass == "SHAMAN" ) then
 		
 		-- If only every other class was as easy as Paladins
 		CalculateHealing = function(guid, spellName, spellRank)
-			local healAmount = HealComm.averageHeal[spellName][spellRank]
+			local healAmount = averageHeal[spellName][spellRank]
 			local rank = HealComm.rankNumbers[spellRank]
 			local spellPower = GetSpellBonusHealing()
 			local healModifier, spModifier = playerHealModifier, 1
@@ -1479,8 +1476,10 @@ HealComm.GLYPH_UPDATED = HealComm.GlyphsUpdated
 
 -- Invalidate he average cache to recalculate for spells that increase in power due to leveling up (but not training new ranks)
 function HealComm:PLAYER_LEVEL_UP()
-	for _, average in pairs(self.averageHeal) do
+	for spell, average in pairs(averageHeal) do
 		table.wipe(average)
+		
+		average.spell = spell
 	end
 end
 
@@ -2378,13 +2377,14 @@ function HealComm:OnInitialize()
 	table.wipe(hotData)
 	table.wipe(itemSetsData)
 	table.wipe(talentData)
+	table.wipe(averageHeal)
 
 	-- Load all of the classes formulas and such
 	LoadClassData()
 	
 	-- Setup the metatables for average healing
 	for spell in pairs(spellData) do
-		self.averageHeal[spell] = setmetatable({spell = spell}, self.averageHealMT)
+		averageHeal[spell] = setmetatable({spell = spell}, self.averageHealMT)
 	end
 	
 	-- Cache glyphs initially
