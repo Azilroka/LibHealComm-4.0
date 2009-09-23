@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 27
+local minor = 28
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -133,6 +133,9 @@ end
 HealComm.averageHeal = HealComm.averageHeal or {}
 HealComm.averageHealMT = HealComm.averageHealMT or {
 	__index = function(tbl, index)
+		-- Hard stop so it won't stack overflow if index is requested
+		if( not tbl.spell or index == "spell" ) then return nil end
+		
 		local playerLevel = UnitLevel("player")
 		local rank = HealComm.rankNumbers[index]
 		local spellData = HealComm.spellData[tbl.spell]
@@ -202,7 +205,7 @@ local function removeRecord(pending, guid)
 	table.remove(pending, id)
 	pending[guid] = nil
 	
-	if( activeHots[guid] ) then
+	if( pending.bitType == HOT_HEALS and activeHots[guid] ) then
 		activeHots[guid] = activeHots[guid] - 1
 		activeHots[guid] = activeHots[guid] > 0 and activeHots[guid] or nil
 	end
@@ -238,7 +241,7 @@ local function removeRecordList(pending, inc, comp, ...)
 end
 
 -- Removes every mention to the given GUID
-local function removeAllRecords(pending, guid)
+local function removeAllRecords(guid)
 	local changed
 	for _, spells in pairs(pendingHeals) do
 		for _, pending in pairs(spells) do
@@ -2281,7 +2284,7 @@ function HealComm:UNIT_PET(unit)
 		activePets[unit] = guid
 	-- This used to be an active pet, need to invalidate pending heals
 	elseif( activePets[unit] and guidToUnit[guid] ) then
-		removeAllRecords(guidToUnit[guid], activePets[unit])
+		removeAllRecords(activePets[unit])
 
 		guidToUnit[guid] = nil
 		guidToGroup[guid] = nil
