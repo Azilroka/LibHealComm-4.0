@@ -1,9 +1,22 @@
 local major = "LibHealComm-4.0"
-local minor = 29
+local minor = 30
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
 if( not HealComm ) then return end
+
+-- API CONSTANTS
+--local ALL_DATA = 0x0f
+local DIRECT_HEALS = 0x01
+local CHANNEL_HEALS = 0x02
+local HOT_HEALS = 0x04
+--local ABSORB_SHIELDS = 0x08
+local BOMB_HEALS = 0x10
+local ALL_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS, HOT_HEALS, BOMB_HEALS)
+local CASTED_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS)
+local OVERTIME_HEALS = bit.bor(HOT_HEALS, CHANNEL_HEALS)
+
+HealComm.ALL_HEALS, HealComm.CHANNEL_HEALS, HealComm.DIRECT_HEALS, HealComm.HOT_HEALS, HealComm.CASTED_HEALS, HealComm.ABSORB_SHIELDS, HealComm.ALL_DATA, HealComm.BOMB_HEALS = ALL_HEALS, CHANNEL_HEALS, DIRECT_HEALS, HOT_HEALS, CASTED_HEALS, ABSORB_SHIELDS, ALL_DATA, BOMB_HEALS
 
 -- This needs to be bumped if there is a major change that breaks the comm format
 local COMM_PREFIX = "LHC40"
@@ -29,7 +42,6 @@ if( not HealComm.unitToPet ) then
 	for i=1, MAX_PARTY_MEMBERS do HealComm.unitToPet["party" .. i] = "partypet" .. i end
 	for i=1, MAX_RAID_MEMBERS do HealComm.unitToPet["raid" .. i] = "raidpet" .. i end
 end
-	
 
 local spellData, hotData, tempPlayerList, pendingHeals = HealComm.spellData, HealComm.hotData, HealComm.tempPlayerList, HealComm.pendingHeals
 local equippedSetCache, itemSetsData, talentData = HealComm.equippedSetCache, HealComm.itemSetsData, HealComm.talentData
@@ -254,11 +266,15 @@ local function removeAllRecords(guid)
 				pending[guid] = nil
 				
 				-- Shift everything back
-				for i=1, #(pending), 5 do
-					local guid = pending[i]
-					if( pending[guid] > id ) then
-						pending[guid] = pending[guid] - 5
+				if( #(pending) > 0 ) then
+					for i=1, #(pending), 5 do
+						local guid = pending[i]
+						if( pending[guid] > id ) then
+							pending[guid] = pending[guid] - 5
+						end
 					end
+				else
+					table.wipe(pending)
 				end
 				
 				changed = true
@@ -299,18 +315,6 @@ local function clearPendingHeals()
 end
 
 -- APIs
---local ALL_DATA = 0x0f
-local DIRECT_HEALS = 0x01
-local CHANNEL_HEALS = 0x02
-local HOT_HEALS = 0x04
---local ABSORB_SHIELDS = 0x08
-local BOMB_HEALS = 0x10
-local ALL_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS, HOT_HEALS, BOMB_HEALS)
-local CASTED_HEALS = bit.bor(DIRECT_HEALS, CHANNEL_HEALS)
-local OVERTIME_HEALS = bit.bor(HOT_HEALS, CHANNEL_HEALS)
-
-HealComm.ALL_HEALS, HealComm.CHANNEL_HEALS, HealComm.DIRECT_HEALS, HealComm.HOT_HEALS, HealComm.CASTED_HEALS, HealComm.ABSORB_SHIELDS, HealComm.ALL_DATA, HealComm.BOMB_HEALS = ALL_HEALS, CHANNEL_HEALS, DIRECT_HEALS, HOT_HEALS, CASTED_HEALS, ABSORB_SHIELDS, ALL_DATA, BOMB_HEALS
-
 -- Returns the current healing modifier for the GUID
 function HealComm:GetHealModifier(guid)
 	return HealComm.currentModifiers[guid] or 1
