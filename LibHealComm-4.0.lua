@@ -1813,31 +1813,36 @@ HealComm.bucketFrame:SetScript("OnUpdate", function(self, elapsed)
 	local totalLeft = 0
 	for casterGUID, spells in pairs(bucketHeals) do
 		for id, data in pairs(spells) do
-			if( data.timeout and data.timeout < 0 ) then
-				-- We're doing a bucket for a tick heal like Tranquility or Wild Growth
-				if( data.type == "tick" ) then
-					local pending = pendingHeals[casterGUID][data.spellID] or pendingHeals[casterGUID][data.spellName]
-					if( pending.bitType ) then
-						local endTime = select(3, getRecord(pending, data[1]))
-						HealComm.callbacks:Fire("HealComm_HealUpdated", casterGUID, pending.spellID, pending.bitType, endtime, unpack(data))
-					end
-
-					table.wipe(data)
-				-- We're doing a bucket for a cast thats a multi-target heal like Wild Growth or Prayer of Healing
-				elseif( data.type == "heal" ) then
-					local type, amount, tickInterval = CalculateHotHealing(data[1], data.spellID)
-					if( type ) then
-						local targets, amount = GetHealTargets(type, data[1], math.max(amount, 0), data.spellName, data)
-						parseHotHeal(playerGUID, false, data.spellID, amount, tickInterval, string.split(",", targets))
-						sendMessage(string.format("H::%d:%d::%d:%s", data.spellID, amount, tickInterval, targets))
-					end
-
-					table.wipe(data)
-				end
-				
-			elseif( data.timeout ) then
-				totalLeft = totalLeft + 1
+			if( data.timeout ) then
 				data.timeout = data.timeout - elapsed
+				
+				if( data.timeout <= 0 ) then
+					-- This shouldn't happen, on the offhand chance it does then don't bother sending an event
+					if( #(data) == 0 or not data.spellID or not data.spellName ) then
+						table.wipe(data)
+					-- We're doing a bucket for a tick heal like Tranquility or Wild Growth
+					elseif( data.type == "tick" ) then
+						local pending = pendingHeals[casterGUID] and ( pendingHeals[casterGUID][data.spellID] or pendingHeals[casterGUID][data.spellName] )
+						if( pending and pending.bitType ) then
+							local endTime = select(3, getRecord(pending, data[1]))
+							HealComm.callbacks:Fire("HealComm_HealUpdated", casterGUID, pending.spellID, pending.bitType, endtime, unpack(data))
+						end
+
+						table.wipe(data)
+					-- We're doing a bucket for a cast thats a multi-target heal like Wild Growth or Prayer of Healing
+					elseif( data.type == "heal" ) then
+						local type, amount, tickInterval = CalculateHotHealing(data[1], data.spellID)
+						if( type ) then
+							local targets, amount = GetHealTargets(type, data[1], math.max(amount, 0), data.spellName, data)
+							parseHotHeal(playerGUID, false, data.spellID, amount, tickInterval, string.split(",", targets))
+							sendMessage(string.format("H::%d:%d::%d:%s", data.spellID, amount, tickInterval, targets))
+						end
+
+						table.wipe(data)
+					end
+				else
+					totalLeft = totalLeft + 1
+				end
 			end
 		end
 	end
