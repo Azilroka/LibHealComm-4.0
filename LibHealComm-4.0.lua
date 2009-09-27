@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 31
+local minor = 32
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -2262,7 +2262,6 @@ local function clearGUIDData()
 	table.wipe(decompressGUID)
 	table.wipe(activePets)
 	
-	-- UnitGUID("player") seems to return nil if a group is disbanded while zoning, odd but this will fix that
 	playerGUID = playerGUID or UnitGUID("player")
 	HealComm.guidToUnit = {[playerGUID] = "player"}
 	guidToUnit = HealComm.guidToUnit
@@ -2374,9 +2373,6 @@ end
 
 -- Initialize the library
 function HealComm:OnInitialize()
-	playerGUID = UnitGUID("player")
-	playerName = UnitName("player")
-
 	-- Oddly enough player GUID is not available on file load, so keep the map of player GUID to themselves too
 	guidToUnit[playerGUID] = "player"
 
@@ -2406,7 +2402,6 @@ function HealComm:OnInitialize()
 	end
 	
 	self:PLAYER_EQUIPMENT_CHANGED()
-	self:ZONE_CHANGED_NEW_AREA()
 	
 	-- When first logging in talent data isn't available until at least PLAYER_ALIVE, so if we don't have data
 	-- will wait for that event otherwise will just cache it right now
@@ -2473,23 +2468,31 @@ end
 -- Event handler
 HealComm.frame = HealComm.frame or CreateFrame("Frame")
 HealComm.frame:UnregisterAllEvents()
-HealComm.frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-HealComm.frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
-HealComm.frame:RegisterEvent("RAID_ROSTER_UPDATE")
 HealComm.frame:RegisterEvent("UNIT_PET")
 HealComm.frame:SetScript("OnEvent", OnEvent)
 
-if( not isHealerClass ) then return end
-
--- If the player is not logged in yet, then we're still loading and will watch for PLAYER_LOGIN to assume everything is initialized
--- if we're already logged in then it was probably LOD loaded
+-- At PLAYER_LEAVING_WORLD (Actually more like MIRROR_TIMER_STOP but anyway) UnitGUID("player") returns nil, delay registering
+-- events and set a playerGUID/playerName combo for all players on PLAYER_LOGIN not just the healers.
 function HealComm:PLAYER_LOGIN()
-	self:OnInitialize()
+	playerGUID = UnitGUID("player")
+	playerName = UnitName("player")
+
+	if( isHealerClass ) then
+		self:OnInitialize()
+	end
+
 	self.frame:UnregisterEvent("PLAYER_LOGIN")
+	self.frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+	self.frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+	self.frame:RegisterEvent("RAID_ROSTER_UPDATE")
+	
+	self:ZONE_CHANGED_NEW_AREA()
+	self:RAID_ROSTER_UPDATE()
+	self:PARTY_MEMBERS_CHANGED()
 end
 
 if( not IsLoggedIn() ) then
 	HealComm.frame:RegisterEvent("PLAYER_LOGIN")
 else
-	HealComm:OnInitialize()
+	HealComm:PLAYER_LOGIN()
 end
