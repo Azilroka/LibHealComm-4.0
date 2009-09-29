@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 33
+local minor = 34
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -335,8 +335,6 @@ HealComm.protectedMap = HealComm.protectedMap or setmetatable({}, {
 function HealComm:GetGUIDUnitMapTable()
 	return HealComm.protectedMap
 end
-
-HealComm.GetGuidUnitMapTable = HealComm.GetGUIDUnitMapTable
 
 -- Gets the next heal landing on someone using the passed filters
 function HealComm:GetNextHealAmount(guid, bitFlag, time, ignoreGUID)
