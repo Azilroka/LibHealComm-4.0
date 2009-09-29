@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 32
+local minor = 33
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -334,6 +334,48 @@ HealComm.protectedMap = HealComm.protectedMap or setmetatable({}, {
 
 function HealComm:GetGuidUnitMapTable()
 	return HealComm.protectedMap
+end
+
+-- Gets the next heal landing on someone using the passed filters
+function HealComm:GetNextHealAmount(guid, bitFlag, time, ignoreGUID)
+	local soonestHeal, healAmount, healFrom
+	local currentTime = GetTime()
+	
+	for casterGUID, spells in pairs(pendingHeals) do
+		for _, pending in pairs(spells) do
+			if( pending.bitType and bit.band(pending.bitType, bitFlag) > 0 ) then
+				for i=1, #(pending), 5 do
+					local guid = pending[i]
+					if( not ignoreGUID or ignoreGUID ~= guid ) then
+						local amount = pending[i + 1]
+						local stack = pending[i + 2]
+						local endTime = pending[i + 3]
+						endTime = endTime > 0 and endTime or pending.endTime
+							
+						-- Direct heals are easy, if they match the filter then return them
+						if( ( pending.bitType == DIRECT_HEALS or pending.bitType == BOMB_HEALS ) and ( not time or endTime <= time ) ) then
+							if( not soonestHeal or endTime < soonestHeal ) then
+								soonestHeal = endTime
+								healAmount = amount * stack
+								healFrom = casterGUID
+							end
+							
+						-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
+						elseif( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) then
+							local nextTick = currentTime + ((time - currentTime) % pending.tickInterval)
+							if( not soonestHeal or nextTick < soonestHeal ) then
+								soonestHeal = nextTick
+								healAmount = amount * stack
+								healFrom = casterGUID
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	
+	return soonestHeal, healFrom, healAmount
 end
 
 -- Get the healing amount that matches the passed filters
