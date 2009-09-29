@@ -338,7 +338,7 @@ end
 
 -- Gets the next heal landing on someone using the passed filters
 function HealComm:GetNextHealAmount(guid, bitFlag, time, ignoreGUID)
-	local soonestHeal, healAmount, healFrom
+	local healTime, healAmount, healFrom
 	local currentTime = GetTime()
 	
 	for casterGUID, spells in pairs(pendingHeals) do
@@ -354,17 +354,18 @@ function HealComm:GetNextHealAmount(guid, bitFlag, time, ignoreGUID)
 							
 						-- Direct heals are easy, if they match the filter then return them
 						if( ( pending.bitType == DIRECT_HEALS or pending.bitType == BOMB_HEALS ) and ( not time or endTime <= time ) ) then
-							if( not soonestHeal or endTime < soonestHeal ) then
-								soonestHeal = endTime
+							if( not healTime or endTime < healTime ) then
+								healTime = endTime
 								healAmount = amount * stack
 								healFrom = casterGUID
 							end
 							
 						-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
 						elseif( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) then
-							local nextTick = currentTime + ((time - currentTime) % pending.tickInterval)
-							if( not soonestHeal or nextTick < soonestHeal ) then
-								soonestHeal = nextTick
+							local secondsLeft = time and time - currentTime or endTime - currentTime
+							local nextTick = currentTime + (secondsLeft % pending.tickInterval)
+							if( not healTime or nextTick < healTime ) then
+								healTime = nextTick
 								healAmount = amount * stack
 								healFrom = casterGUID
 							end
@@ -375,7 +376,7 @@ function HealComm:GetNextHealAmount(guid, bitFlag, time, ignoreGUID)
 		end
 	end
 	
-	return soonestHeal, healFrom, healAmount
+	return healTime, healFrom, healAmount
 end
 
 -- Get the healing amount that matches the passed filters
