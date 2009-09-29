@@ -332,9 +332,11 @@ HealComm.protectedMap = HealComm.protectedMap or setmetatable({}, {
 	__metatable = false
 })
 
-function HealComm:GetGuidUnitMapTable()
+function HealComm:GetGUIDUnitMapTable()
 	return HealComm.protectedMap
 end
+
+HealComm.GetGuidUnitMapTable = HealComm.GetGUIDUnitMapTable
 
 -- Gets the next heal landing on someone using the passed filters
 function HealComm:GetNextHealAmount(guid, bitFlag, time, ignoreGUID)
