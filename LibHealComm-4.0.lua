@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 35
+local minor = 36
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -2070,8 +2070,14 @@ function HealComm:UNIT_SPELLCAST_SENT(unit, spellName, spellRank, castOn)
 		guidPriorities[lastSentID] = nil
 		setCastData(5, mouseoverName, mouseoverGUID)
 	else
+		-- If the player is ungrouped and healing, you can't take advantage of the name -> "unit" map, look in the UnitIDs that would most likely contain the information that's needed.
+		local guid = UnitGUID(castOn)
+		if( not guid ) then
+			guid = UnitName("target") == castTarget and UnitGUID("target") or UnitName("focus") == castTarget and UnitGUID("focus") or UnitName("mouseover") == castTarget and UnitGUID("mouseover") or UnitName("targettarget") == castTarget and UnitGUID("target") or UnitName("focustarget") == castTarget and UnitGUID("focustarget")
+		end
+		
 		guidPriorities[lastSentID] = nil
-		setCastData(0, nil, UnitGUID(castOn))
+		setCastData(0, nil, guid)
 	end
 end
 
@@ -2244,7 +2250,8 @@ HealComm.UseAction = HealComm.CastSpell
 -- Make sure we don't have invalid units in this
 local function sanityCheckMapping()
 	for guid, unit in pairs(guidToUnit) do
-		if( not UnitExists(unit) or UnitGUID(unit) ~= guid ) then
+		-- Unit no longer exists, remove all healing for them
+		if( not UnitExists(unit) ) then
 			-- Check for (and remove) any active heals
 			if( pendingHeals[guid] ) then
 				for id, pending in pairs(pendingHeals[guid]) do
@@ -2282,12 +2289,9 @@ if( not HealComm.hotMonitor ) then
 		for guid in pairs(activeHots) do
 			if( guidToUnit[guid] and not UnitIsVisible(guidToUnit[guid]) ) then
 				removeAllRecords(guid)
-				
-				guidToUnit[guid] = nil
-				guidToGroup[guid] = nil
+			else
+				found = true
 			end
-		
-			found = true
 		end
 		
 		if( not found ) then
