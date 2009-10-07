@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 36
+local minor = 37
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -2359,7 +2359,7 @@ function HealComm:PARTY_MEMBERS_CHANGED()
 	end
 	
 	-- Parties are not considered groups in terms of API, so fake it and pretend they are all in group 0
-	guidToGroup[UnitGUID("player")] = 0
+	guidToGroup[playerGUID or UnitGUID("player")] = 0
 	if( not wasInParty ) then self:UNIT_PET("player") end
 	
 	for i=1, MAX_PARTY_MEMBERS do
@@ -2420,9 +2420,6 @@ end
 
 -- Initialize the library
 function HealComm:OnInitialize()
-	-- Oddly enough player GUID is not available on file load, so keep the map of player GUID to themselves too
-	guidToUnit[playerGUID] = "player"
-
 	-- If another instance already loaded then the tables should be wiped to prevent old data from persisting
 	-- in case of a spell being removed later on, only can happen if a newer LoD version is loaded
 	table.wipe(spellData)
@@ -2523,6 +2520,9 @@ HealComm.frame:SetScript("OnEvent", OnEvent)
 function HealComm:PLAYER_LOGIN()
 	playerGUID = UnitGUID("player")
 	playerName = UnitName("player")
+
+	-- Oddly enough player GUID is not available on file load, so keep the map of player GUID to themselves too
+	guidToUnit[playerGUID] = "player"
 
 	if( isHealerClass ) then
 		self:OnInitialize()
