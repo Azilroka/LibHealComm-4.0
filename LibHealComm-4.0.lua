@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 37
+local minor = 38
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -2115,6 +2115,7 @@ function HealComm:UNIT_SPELLCAST_STOP(unit, spellName, spellRank, id)
 	if( unit ~= "player" or not spellData[spellName] or id ~= castID ) then return end
 	local nameID = spellName .. spellRank
 	
+	castID = nil
 	parseHealEnd(playerGUID, nil, "name", self.spellToID[spellName .. spellRank], true)
 	sendMessage(string.format("S::%d:1", self.spellToID[spellName .. spellRank] or 0))
 end
@@ -2123,6 +2124,7 @@ function HealComm:UNIT_SPELLCAST_CHANNEL_STOP(unit, spellName, spellRank, id)
 	if( unit ~= "player" or not spellData[spellName] or id ~= castID ) then return end
 	local nameID = spellName .. spellRank
 
+	castID = nil
 	parseHealEnd(playerGUID, nil, "name", self.spellToID[nameID], false)
 	sendMessage(string.format("S::%d:0", self.spellToID[nameID] or 0))
 end
