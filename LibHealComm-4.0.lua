@@ -18,7 +18,6 @@ local OVERTIME_HEALS = bit.bor(HOT_HEALS, CHANNEL_HEALS)
 
 HealComm.ALL_HEALS, HealComm.CHANNEL_HEALS, HealComm.DIRECT_HEALS, HealComm.HOT_HEALS, HealComm.CASTED_HEALS, HealComm.ABSORB_SHIELDS, HealComm.ALL_DATA, HealComm.BOMB_HEALS = ALL_HEALS, CHANNEL_HEALS, DIRECT_HEALS, HOT_HEALS, CASTED_HEALS, ABSORB_SHIELDS, ALL_DATA, BOMB_HEALS
 
--- This needs to be bumped if there is a major change that breaks the comm format
 local COMM_PREFIX = "LHC40"
 local playerGUID, playerName
 local IS_BUILD30300 = tonumber((select(2, GetBuildInfo()))) >= 10554
