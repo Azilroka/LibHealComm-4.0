@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 40
+local minor = 41
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -53,7 +53,7 @@ local isHealerClass = playerClass == "DRUID" or playerClass == "PRIEST" or playe
 
 -- Stolen from Threat-2.0, compresses GUIDs from 18 characters to around 8 - 9, 50%/55% savings
 -- 44 = , / 58 = : / 255 = \255 / 0 = line break? / 64 = @
-if( not HealComm.compressGUID ) then
+if( not HealComm.compressGUID or not HealComm.revisedCompressor ) then
 	local map = {[58] = "\254\250", [64] = "\254\251",  [44] = "\254\252", [255] = "\254\253", [0] = "\255"}
 	local function guidCompressHelper(x)
 	   local a = tonumber(x, 16)
@@ -78,11 +78,43 @@ if( not HealComm.compressGUID ) then
 			return str
 	end})
 	
+	local throttle
+	HealComm.revisedCompressor = true
 	HealComm.decompressGUID = setmetatable({}, {
 		__index = function(tbl, str)
 			if( not str ) then return nil end
 			local usc = unescape(str)
-			local guid = string.format(dfmt, string.byte(usc, 1, 8))
+			local a, b, c, d, e, f, g, h = string.byte(usc, 1, 8)
+
+			-- Failed to decompress
+			if( not a or not b or not c or not d or not e or not f or not g or not h ) then
+				if( not throttle or throttle < GetTime() ) then
+					-- Only give this alert once every 5 minutes
+					throttle = GetTime() + 300
+
+					-- This isn't optimal, but need checking them all is the only "real" way to find out
+					-- what GUID errored in the group
+					for guid, unit in pairs(HealComm.guidToUnit) do
+						local compressed = HealComm.compressGUID[guid]
+						compressed = string.gsub(compressed, ",", "")
+						compressed = string.gsub(compressed, ":", "")
+						compressed = compressed .. ":"
+						compressed = string.split(":", compressed)
+						
+						local decompressed = HealComm.decompressGUID[compressed]
+						if( not decompressed or decompressed ~= guid ) then
+							print(string.format("%s-%s: Had GUID failure, found source %s, %s, %s (%s, %s)", major, minor, guid, unit, compressed, str, usc))
+							return ""
+						end
+					end
+					
+					print(string.format("%s-%s: Had GUID failure, but could not find source (%s, %s)", major, minor, str, usc))
+				end
+				
+				return ""
+			end
+			
+			local guid = string.format(dfmt, a, b, c, d, e, f, g, h)
 	
 			rawset(tbl, str, guid)
 			return guid
