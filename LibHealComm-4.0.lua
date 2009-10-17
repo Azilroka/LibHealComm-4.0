@@ -109,6 +109,7 @@ if( not HealComm.compressGUID or not HealComm.revisedCompressor ) then
 					end
 					
 					print(string.format("%s-%s: Had GUID failure, but could not find source (%s, %s)", major, minor, str, usc))
+					print(string.format("a %s, b %s, d %s, c %s, e %s, f %s, g %s, h %s", tostring(a), tostring(b), tostring(c), tostring(d), tostring(e), tostring(f), tostring(g), tostring(h)))
 				end
 				
 				return ""
