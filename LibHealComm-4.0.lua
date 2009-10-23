@@ -476,7 +476,7 @@ local function filterData(spells, filterGUID, bitFlag, time, ignoreGUID)
 							if( not pending.hasVariableTicks ) then
 								healAmount = healAmount + (amount * stack) * math.min(ticks, ticksLeft)
 							else
-								for i=1, ticks do
+								for i=1, math.min(ticks, #(amount)) do
 									healAmount = healAmount + (amount[i] * stack)
 								end
 							end
