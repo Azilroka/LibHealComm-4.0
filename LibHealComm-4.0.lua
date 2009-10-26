@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 43
+local minor = 44
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -1489,6 +1489,11 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(41350)] = 2.00, -- Aura of Desire
 }
 
+-- Temporary to ensure the new fixed version is used even when upgrading from an older version
+if( HealComm.healingStackMods ) then
+	HealComm.healingStackMods[getName(45242)] = function(name, rank, icon, stacks) return 1 + (stacks * (0.02 + rankNumbers[rank])) end,
+end
+
 HealComm.healingStackMods = HealComm.healingStackMods or {
 	-- Tenacity
 	[getName(58549)] = function(name, rank, icon, stacks) return icon == "Interface\\Icons\\Ability_Warrior_StrengthOfArms" and stacks ^ 1.18 or 1 end,
@@ -1600,7 +1605,7 @@ function HealComm:UNIT_AURA(unit)
 	while( true ) do
 		local name, rank, icon, stack = UnitAura(unit, id, "HELPFUL")
 		if( not name ) then break end
-		-- Don't want to calculate a modifier twice, or spells such as ToL will show be extra 1.06 for Druids in TOL
+		-- Prevent buffs like Tree of Life that have the same name for the shapeshift/healing increase from being calculated twice
 		if( not alreadyAdded[name] ) then
 			alreadyAdded[name] = true
 
