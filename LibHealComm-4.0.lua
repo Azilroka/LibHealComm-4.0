@@ -1491,14 +1491,14 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 
 -- Temporary to ensure the new fixed version is used even when upgrading from an older version
 if( HealComm.healingStackMods ) then
-	HealComm.healingStackMods[getName(45242)] = function(name, rank, icon, stacks) return 1 + (stacks * (0.02 + rankNumbers[rank])) end,
+	HealComm.healingStackMods[getName(45242)] = function(name, rank, icon, stacks) return 1 + (stacks * (0.02 + rankNumbers[rank] / 100)) end
 end
 
 HealComm.healingStackMods = HealComm.healingStackMods or {
 	-- Tenacity
 	[getName(58549)] = function(name, rank, icon, stacks) return icon == "Interface\\Icons\\Ability_Warrior_StrengthOfArms" and stacks ^ 1.18 or 1 end,
 	-- Focused Will
-	[getName(45242)] = function(name, rank, icon, stacks) return 1 + (stacks * (0.02 + rankNumbers[rank])) end,
+	[getName(45242)] = function(name, rank, icon, stacks) return 1 + (stacks * (0.02 + rankNumbers[rank] / 100)) end,
 	-- Nether Portal - Dominance
 	[getName(30423)] = function(name, rank, icon, stacks) return 1 + stacks * 0.01 end,
 	-- Dark Touched
