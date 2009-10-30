@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 44
+local minor = 45
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -188,27 +188,32 @@ if( not HealComm.spellToID ) then
 end
 
 -- This gets filled out after data has been loaded, this is only for casted heals. Hots just directly pull from the averages as they do not increase in power with level, Cataclysm will change this though.
+if( HealComm.averageHealMT and not HealComm.fixedAverage ) then
+	HealComm.averageHealMT = nil
+	HealComm.fixedAverage = true
+end
+
 HealComm.averageHeal = HealComm.averageHeal or {}
 HealComm.averageHealMT = HealComm.averageHealMT or {
 	__index = function(tbl, index)
 		local rank = HealComm.rankNumbers[index]
 		local spellData = HealComm.spellData[rawget(tbl, "spell")]
 		local spellLevel = spellData.levels[rank]
-
+		
 		-- No increase, it doesn't scale with levely
-		if( not spellData.increase or playerLevel <= spellLevel ) then
+		if( not spellData.increase or UnitLevel("player") <= spellLevel ) then
 			rawset(tbl, index, spellData.averages[rank])
 			return spellData.averages[rank]
 		end
 		
 		local average = spellData.averages[rank]
-		if( playerLevel >= MAX_PLAYER_LEVEL ) then
+		if( UnitLevel("level") >= MAX_PLAYER_LEVEL ) then
 			average = average + spellData.increase[rank]
 		-- Here's how this works: If a spell increases 1,000 between 70 and 80, the player is level 75 the spell is 70
 		-- it's 1000 / (80 - 70) so 100, the player learned the spell 5 levels ago which means that the spell average increases by 500
 		-- This figures out how much it increases per level and how ahead of the spells level they are to figure out how much to add
 		else
-			average = average + (playerLevel - spellLevel) * (spellData.increase[rank] / (MAX_PLAYER_LEVEL - spellLevel))
+			average = average + (UnitLevel("player") - spellLevel) * (spellData.increase[rank] / (MAX_PLAYER_LEVEL - spellLevel))
 		end
 		
 		rawset(tbl, index, average)
