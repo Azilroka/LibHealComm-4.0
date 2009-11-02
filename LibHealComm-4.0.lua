@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 45
+local minor = 46
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -1434,6 +1434,7 @@ HealComm.selfModifiers = HealComm.selfModifiers or {
 	[65925] = 0.50, -- Unrelenting Assault
 	[54428] = 0.50, -- Divine Plea
 	[64849] = 0.75, -- Unrelenting Assault
+	[70873] = 1.10, -- Emerald Vigor (Valithria Dreamwalker)
 	[31884] = 1.20, -- Avenging Wrath
 }
 
@@ -1493,6 +1494,11 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(31977)] = 1.50, -- Curse of Infinity
 	[getName(41350)] = 2.00, -- Aura of Desire
 }
+
+if( IS_BUILD30300 ) then
+	HealComm.healingModifiers[getName(70588)] = 0.90 -- Suppression (Valithria Dreamwalker NPCs?)
+	HealComm.healingModifiers[getName(69674)] = 0.50 -- Mutated Infection (Rotface)
+end
 
 -- Temporary to ensure the new fixed version is used even when upgrading from an older version
 if( HealComm.healingStackMods ) then
