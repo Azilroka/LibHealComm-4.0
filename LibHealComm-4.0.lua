@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 46
+local minor = 47
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -20,7 +20,7 @@ HealComm.ALL_HEALS, HealComm.CHANNEL_HEALS, HealComm.DIRECT_HEALS, HealComm.HOT_
 
 local COMM_PREFIX = "LHC40"
 local playerGUID, playerName, playerLevel
-local IS_BUILD30300 = tonumber((select(2, GetBuildInfo()))) >= 10554
+local IS_BUILD30300 = tonumber((select(4, GetBuildInfo()))) >= 30300
 
 HealComm.callbacks = HealComm.callbacks or LibStub:GetLibrary("CallbackHandler-1.0"):New(HealComm)
 HealComm.spellData = HealComm.spellData or {}
@@ -53,7 +53,7 @@ local isHealerClass = playerClass == "DRUID" or playerClass == "PRIEST" or playe
 
 -- Stolen from Threat-2.0, compresses GUIDs from 18 characters to around 8 - 9, 50%/55% savings
 -- 44 = , / 58 = : / 255 = \255 / 0 = line break? / 64 = @
-if( not HealComm.compressGUID or not HealComm.revisedCompressor ) then
+if( not HealComm.compressGUID ) then
 	local map = {[58] = "\254\250", [64] = "\254\251",  [44] = "\254\252", [255] = "\254\253", [0] = "\255"}
 	local function guidCompressHelper(x)
 	   local a = tonumber(x, 16)
@@ -79,7 +79,6 @@ if( not HealComm.compressGUID or not HealComm.revisedCompressor ) then
 	end})
 	
 	local throttle
-	HealComm.revisedCompressor = true
 	HealComm.decompressGUID = setmetatable({}, {
 		__index = function(tbl, str)
 			if( not str ) then return nil end
@@ -126,7 +125,7 @@ local compressGUID, decompressGUID = HealComm.compressGUID, HealComm.decompressG
 
 -- Handles caching of tables for variable tick spells, like Wild Growth
 if( not HealComm.tableCache ) then
-	HealComm.tableCache = {}
+	HealComm.tableCache = setmetatable({}, {__mode = "k"})
 	function HealComm:RetrieveTable()
 		return table.remove(HealComm.tableCache, 1) or {}
 	end
@@ -190,9 +189,9 @@ end
 -- This gets filled out after data has been loaded, this is only for casted heals. Hots just directly pull from the averages as they do not increase in power with level, Cataclysm will change this though.
 if( HealComm.averageHealMT and not HealComm.fixedAverage ) then
 	HealComm.averageHealMT = nil
-	HealComm.fixedAverage = true
 end
 
+HealComm.fixedAverage = true
 HealComm.averageHeal = HealComm.averageHeal or {}
 HealComm.averageHealMT = HealComm.averageHealMT or {
 	__index = function(tbl, index)
@@ -386,13 +385,15 @@ function HealComm:GUIDHasHealed(guid)
 end
 
 -- Returns the guid to unit table
-HealComm.protectedMap = HealComm.protectedMap or setmetatable({}, {
-	__index = function(tbl, key) return HealComm.guidToUnit[key] end,
-	__newindex = function() error("This is a read only table and cannot be modified.", 2) end,
-	__metatable = false
-})
-
 function HealComm:GetGUIDUnitMapTable()
+	if( not HealComm.protectedMap ) then
+		HealComm.protectedMap = setmetatable({}, {
+			__index = function(tbl, key) return HealComm.guidToUnit[key] end,
+			__newindex = function() error("This is a read only table and cannot be modified.", 2) end,
+			__metatable = false
+		})
+	end
+	
 	return HealComm.protectedMap
 end
 
@@ -575,7 +576,7 @@ end
 	
 	AuraHandler: Specific aura tracking needed for this class, who has Beacon up on them and such
 	
-	ResetChargeData: Due to spell "queuing" you can't always rely on aura data for buffs that last one or two casts, for example take Divine Favor (+100% crit, one spell)
+	ResetChargeData: Due to spell "queuing" you can't always rely on aura data for buffs that last one or two casts, for example Divine Favor (+100% crit, one spell)
 	if you cast Holy Light and queue Flash of Light the library would still see they have Divine Favor and give them crits on both spells. The reset means that the flag that indicates
 	they have the aura can be killed and if they interrupt the cast then it will call this and let you reset the flags.
 	
@@ -589,7 +590,7 @@ end
 	
 	CalculateHealing: Calculates the healing value, does all the formula calculations talent modifiers and such
 	
-	CalculateHotHealing: Is used specifically for calculating the heals of hots
+	CalculateHotHealing: Used specifically for calculating the heals of hots
 	
 	GetHealTargets: Who the heal is going to hit, used for setting extra targets for Beacon of Light + Paladin heal or Prayer of Healing.
 	The returns should either be:
@@ -1500,11 +1501,6 @@ if( IS_BUILD30300 ) then
 	HealComm.healingModifiers[getName(69674)] = 0.50 -- Mutated Infection (Rotface)
 end
 
--- Temporary to ensure the new fixed version is used even when upgrading from an older version
-if( HealComm.healingStackMods ) then
-	HealComm.healingStackMods[getName(45242)] = function(name, rank, icon, stacks) return 1 + (stacks * (0.02 + rankNumbers[rank] / 100)) end
-end
-
 HealComm.healingStackMods = HealComm.healingStackMods or {
 	-- Tenacity
 	[getName(58549)] = function(name, rank, icon, stacks) return icon == "Interface\\Icons\\Ability_Warrior_StrengthOfArms" and stacks ^ 1.18 or 1 end,
@@ -1578,7 +1574,7 @@ function HealComm:ZONE_CHANGED_NEW_AREA()
 		
 		-- Changes the value of Necrotic Poison based on zone type, if there are more difficulty type MS's I'll support those too
 		-- Heroic = 90%, Non-Heroic = 75%
-		-- Apparently the Chinese version of WoW is on 3.1.x still, this is a quick fix so it'll work for them
+		-- Not all versions of WoW are on 3.2, as such only check difficulty if they are, otherwise default to the heroic version
 		if( GetRaidDifficulty and ( GetRaidDifficulty() == 2 or GetRaidDifficulty() == 4 ) ) then
 			healingModifiers[GetSpellInfo(53121)] = 0.25
 		else
