@@ -676,6 +676,8 @@ if( playerClass == "DRUID" ) then
 		itemSetsData["T7 Resto"] = {40460, 40461, 40462, 40463, 40465, 39531, 39538, 39539, 39542, 39543}
 		--itemSetsData["T8 Resto"] = {46183, 46184, 46185, 46186, 46187, 45345, 45346, 45347, 45348, 45349} 
 		--itemSetsData["T9 Resto"] = {48102, 48129, 48130, 48131, 48132, 48153, 48154, 48155, 48156, 48157, 48133, 48134, 48135, 48136, 48137, 48142, 48141, 48140, 48139, 48138, 48152, 48151, 48150, 48149, 48148, 48143, 48144, 48145, 48146, 48147}
+		-- 2 piece, 30% less healing lost on WG
+		itemSetsData["T10 Resto"] = {50106, 50107, 50108, 50109, 50113, 51139, 51138, 51137, 51136, 51135}
 		
 		local hotTotals, hasRegrowth = {}, {}
 		AuraHandler = function(unit, guid)
@@ -815,6 +817,8 @@ if( playerClass == "DRUID" ) then
 				spellPower = calculateSpellPower(hotData[spellName].levels[rank], spellPower)
 				healAmount = healAmount / hotData[spellName].ticks
 				
+				--if( equippedSetCache["T10 Resto"] >= 2 ) then
+								
 				table.wipe(wgTicks)
 				local tickModifier = healAmount / hotData[spellName].ticks
 				for i=1, hotData[spellName].ticks do
@@ -1480,6 +1484,7 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(32315)] = 0.50, -- Soul Strike
 	[getName(60084)] = 0.50, -- The Veil of Shadow
 	[getName(45885)] = 0.50, -- Shadow Spike
+	[getName(32346)] = 0.50, -- Stolen Soul
 	[getName(63038)] = 0.75, -- Dark Volley
 	[getName(52771)] = 0.75, -- Wounding Strike
 	[getName(48291)] = 0.75, -- Fetid Healing
@@ -1499,6 +1504,7 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 if( IS_BUILD30300 ) then
 	HealComm.healingModifiers[getName(70588)] = 0.90 -- Suppression (Valithria Dreamwalker NPCs?)
 	HealComm.healingModifiers[getName(69674)] = 0.50 -- Mutated Infection (Rotface)
+	HealComm.healingModifiers[getName(71473)] = 2.00 -- Essence of the Vampyr Queen (Bood Queen Lana'thel)
 end
 
 HealComm.healingStackMods = HealComm.healingStackMods or {
