@@ -1438,6 +1438,7 @@ HealComm.selfModifiers = HealComm.selfModifiers or {
 	[64850] = 0.50, -- Unrelenting Assault
 	[65925] = 0.50, -- Unrelenting Assault
 	[54428] = 0.50, -- Divine Plea
+	[32346] = 0.50, -- Stolen Soul
 	[64849] = 0.75, -- Unrelenting Assault
 	[70873] = 1.10, -- Emerald Vigor (Valithria Dreamwalker)
 	[31884] = 1.20, -- Avenging Wrath
@@ -1472,6 +1473,7 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(57974)] = 0.50, -- 6
 	[getName(57975)] = 0.50, -- 7
 	[getName(20900)] = 0.50, -- Aimed Shot
+	[getName(44534)] = 0.50, -- Wretched Strike
 	[getName(21551)] = 0.50, -- Mortal Strike
 	[getName(40599)] = 0.50, -- Arcing Smash
 	[getName(36917)] = 0.50, -- Magma-Throwser's Curse
@@ -1484,13 +1486,13 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(32315)] = 0.50, -- Soul Strike
 	[getName(60084)] = 0.50, -- The Veil of Shadow
 	[getName(45885)] = 0.50, -- Shadow Spike
-	[getName(32346)] = 0.50, -- Stolen Soul
 	[getName(63038)] = 0.75, -- Dark Volley
 	[getName(52771)] = 0.75, -- Wounding Strike
 	[getName(48291)] = 0.75, -- Fetid Healing
 	[getName(54525)] = 0.80, -- Shroud of Darkness (This might be wrong)
 	[getName(48301)] = 0.80, -- Mind Trauma (Improved Mind Blast)
 	[getName(68391)] = 0.80, -- Permafrost, the debuff is generic no way of seeing 7/13/20, go with 20
+	[getName(52645)] = 0.80, -- Hex of Weakness
 	[getName(34073)] = 0.85, -- Curse of the Bleeding Hollow
 	[getName(43410)] = 0.90, -- Chop
 	[getName(34123)] = 1.06, -- Tree of Life
@@ -1520,6 +1522,8 @@ HealComm.healingStackMods = HealComm.healingStackMods or {
 	[getName(60626)] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end, 
 	-- Mortal Wound
 	[getName(28467)] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end, 
+	-- Furious Strikes
+	[getName(56112)] = function(name, rank, icon, stacks) return 1 - stacks * 0.25 end,
 }
 
 local healingStackMods, selfModifiers = HealComm.healingStackMods, HealComm.selfModifiers
