@@ -1440,6 +1440,7 @@ HealComm.selfModifiers = HealComm.selfModifiers or {
 	[54428] = 0.50, -- Divine Plea
 	[32346] = 0.50, -- Stolen Soul
 	[64849] = 0.75, -- Unrelenting Assault
+	[72221] = 1.05, -- Luck of the Draw
 	[70873] = 1.10, -- Emerald Vigor (Valithria Dreamwalker)
 	[31884] = 1.20, -- Avenging Wrath
 }
