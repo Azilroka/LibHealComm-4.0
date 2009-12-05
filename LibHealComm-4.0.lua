@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 47
+local minor = 48
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -1556,20 +1556,20 @@ local function updateDistributionChannel()
 	
 	-- If the player is not a healer, some events can be disabled until the players grouped.
 	if( distribution ) then
-		HealComm.frame:RegisterEvent("CHAT_MSG_ADDON")
+		HealComm.eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 		if( not isHealerClass ) then
-			HealComm.frame:RegisterEvent("UNIT_AURA")
-			HealComm.frame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
-			HealComm.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
-			HealComm.frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+			HealComm.eventFrame:RegisterEvent("UNIT_AURA")
+			HealComm.eventFrame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
+			HealComm.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+			HealComm.eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 		end
 	else
-		HealComm.frame:UnregisterEvent("CHAT_MSG_ADDON")
+		HealComm.eventFrame:UnregisterEvent("CHAT_MSG_ADDON")
 		if( not isHealerClass ) then
-			HealComm.frame:UnregisterEvent("UNIT_AURA")
-			HealComm.frame:UnregisterEvent("UNIT_SPELLCAST_DELAYED")
-			HealComm.frame:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
-			HealComm.frame:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+			HealComm.eventFrame:UnregisterEvent("UNIT_AURA")
+			HealComm.eventFrame:UnregisterEvent("UNIT_SPELLCAST_DELAYED")
+			HealComm.eventFrame:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+			HealComm.eventFrame:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 		end
 	end
 end
@@ -2623,7 +2623,7 @@ end
 -- PLAYER_ALIVE = got talent data
 function HealComm:PLAYER_ALIVE()
 	self:PLAYER_TALENT_UPDATE()
-	self.frame:UnregisterEvent("PLAYER_ALIVE")
+	self.eventFrame:UnregisterEvent("PLAYER_ALIVE")
 end
 
 -- Initialize the library
@@ -2658,34 +2658,34 @@ function HealComm:OnInitialize()
 	-- When first logging in talent data isn't available until at least PLAYER_ALIVE, so if we don't have data
 	-- will wait for that event otherwise will just cache it right now
 	if( GetNumTalentTabs() == 0 ) then
-		self.frame:RegisterEvent("PLAYER_ALIVE")
+		self.eventFrame:RegisterEvent("PLAYER_ALIVE")
 	else
 		self:PLAYER_TALENT_UPDATE()
 	end
 	
 	if( ResetChargeData ) then
-		HealComm.frame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+		HealComm.eventFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
 	end
 	
 	-- Finally, register it all
-	self.frame:RegisterEvent("UNIT_SPELLCAST_SENT")
-	self.frame:RegisterEvent("UNIT_SPELLCAST_START")
-	self.frame:RegisterEvent("UNIT_SPELLCAST_STOP")
-	self.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
-	self.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
-	self.frame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
-	self.frame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
-	self.frame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
-	self.frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-	self.frame:RegisterEvent("PLAYER_TALENT_UPDATE")
-	self.frame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-	self.frame:RegisterEvent("PLAYER_TARGET_CHANGED")
-	self.frame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
-	self.frame:RegisterEvent("PLAYER_LEVEL_UP")
-	self.frame:RegisterEvent("GLYPH_ADDED")
-	self.frame:RegisterEvent("GLYPH_REMOVED")
-	self.frame:RegisterEvent("GLYPH_UPDATED")
-	self.frame:RegisterEvent("UNIT_AURA")
+	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_SENT")
+	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
+	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
+	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
+	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
+	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
+	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+	self.eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+	self.eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+	self.eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+	self.eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+	self.eventFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
+	self.eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
+	self.eventFrame:RegisterEvent("GLYPH_ADDED")
+	self.eventFrame:RegisterEvent("GLYPH_REMOVED")
+	self.eventFrame:RegisterEvent("GLYPH_UPDATED")
+	self.eventFrame:RegisterEvent("UNIT_AURA")
 	
 	if( self.initialized ) then return end
 	self.initialized = true
@@ -2718,10 +2718,11 @@ local function OnEvent(self, event, ...)
 end
 
 -- Event handler
-HealComm.frame = HealComm.frame or CreateFrame("Frame")
-HealComm.frame:UnregisterAllEvents()
-HealComm.frame:RegisterEvent("UNIT_PET")
-HealComm.frame:SetScript("OnEvent", OnEvent)
+HealComm.eventFrame = HealComm.frame or HealComm.eventFrame or CreateFrame("Frame")
+HealComm.eventFrame:UnregisterAllEvents()
+HealComm.eventFrame:RegisterEvent("UNIT_PET")
+HealComm.eventFrame:SetScript("OnEvent", OnEvent)
+HealComm.frame = nil
 
 -- At PLAYER_LEAVING_WORLD (Actually more like MIRROR_TIMER_STOP but anyway) UnitGUID("player") returns nil, delay registering
 -- events and set a playerGUID/playerName combo for all players on PLAYER_LOGIN not just the healers.
@@ -2737,10 +2738,10 @@ function HealComm:PLAYER_LOGIN()
 		self:OnInitialize()
 	end
 
-	self.frame:UnregisterEvent("PLAYER_LOGIN")
-	self.frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-	self.frame:RegisterEvent("PARTY_MEMBERS_CHANGED")
-	self.frame:RegisterEvent("RAID_ROSTER_UPDATE")
+	self.eventFrame:UnregisterEvent("PLAYER_LOGIN")
+	self.eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+	self.eventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
+	self.eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 	
 	self:ZONE_CHANGED_NEW_AREA()
 	self:RAID_ROSTER_UPDATE()
@@ -2748,7 +2749,7 @@ function HealComm:PLAYER_LOGIN()
 end
 
 if( not IsLoggedIn() ) then
-	HealComm.frame:RegisterEvent("PLAYER_LOGIN")
+	HealComm.eventFrame:RegisterEvent("PLAYER_LOGIN")
 else
 	HealComm:PLAYER_LOGIN()
 end
