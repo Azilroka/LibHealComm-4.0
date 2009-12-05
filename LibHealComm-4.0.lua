@@ -1531,9 +1531,10 @@ local healingStackMods, selfModifiers = HealComm.healingStackMods, HealComm.self
 local healingModifiers, currentModifiers = HealComm.healingModifiers, HealComm.currentModifiers
 
 local distribution
+local CTL = ChatThrottleLib
 local function sendMessage(msg)
 	if( distribution ) then
-		SendAddonMessage(COMM_PREFIX, msg, distribution)
+		CTL:SendAddonMessage("BULK", COMM_PREFIX, msg, distribution)
 	end
 end
 
