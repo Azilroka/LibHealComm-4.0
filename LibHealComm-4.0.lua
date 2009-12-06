@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 48
+local minor = 49
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -78,39 +78,14 @@ if( not HealComm.compressGUID ) then
 			return str
 	end})
 	
-	local throttle
 	HealComm.decompressGUID = setmetatable({}, {
 		__index = function(tbl, str)
 			if( not str ) then return nil end
 			local usc = unescape(str)
 			local a, b, c, d, e, f, g, h = string.byte(usc, 1, 8)
 
-			-- Failed to decompress
+			-- Failed to decompress, silently exit
 			if( not a or not b or not c or not d or not e or not f or not g or not h ) then
-				if( not throttle or throttle < GetTime() ) then
-					-- Only give this alert once every 5 minutes
-					throttle = GetTime() + 300
-
-					-- This isn't optimal, but need checking them all is the only "real" way to find out
-					-- what GUID errored in the group
-					for guid, unit in pairs(HealComm.guidToUnit) do
-						local compressed = HealComm.compressGUID[guid]
-						compressed = string.gsub(compressed, ",", "")
-						compressed = string.gsub(compressed, ":", "")
-						compressed = compressed .. ":"
-						compressed = string.split(":", compressed)
-						
-						local decompressed = HealComm.decompressGUID[compressed]
-						if( not decompressed or decompressed ~= guid ) then
-							print(string.format("%s-%s: Had GUID failure, found source %s, %s, %s (%s, %s)", major, minor, guid, unit, compressed, str, usc))
-							return ""
-						end
-					end
-					
-					print(string.format("%s-%s: Had GUID failure, but could not find source (%s, %s)", major, minor, str, usc))
-					print(string.format("a %s, b %s, d %s, c %s, e %s, f %s, g %s, h %s", tostring(a), tostring(b), tostring(c), tostring(d), tostring(e), tostring(f), tostring(g), tostring(h)))
-				end
-				
 				return ""
 			end
 			
