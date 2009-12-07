@@ -1482,7 +1482,8 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 if( IS_BUILD30300 ) then
 	HealComm.healingModifiers[getName(70588)] = 0.90 -- Suppression (Valithria Dreamwalker NPCs?)
 	HealComm.healingModifiers[getName(69674)] = 0.50 -- Mutated Infection (Rotface)
-	HealComm.healingModifiers[getName(71473)] = 2.00 -- Essence of the Vampyr Queen (Bood Queen Lana'thel)
+	--HealComm.healingModifiers[getName(71473)] = 2.00 -- Essence of the Blood Queen (Bood Queen Lana'thel)
+	HealComm.healingModifiers[getName(71473)] = false -- This no longer gives healing apparently?
 end
 
 HealComm.healingStackMods = HealComm.healingStackMods or {
