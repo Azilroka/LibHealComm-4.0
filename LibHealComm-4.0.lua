@@ -1437,7 +1437,6 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(59513)] = 0.00, -- Embrace of the Vampyr
 	[getName(55593)] = 0.00, -- Necrotic Aura
 	[getName(34625)] = 0.25, -- Demolish
-	[getName(34366)] = 0.25, -- Ebon Poison
 	[getName(19716)] = 0.25, -- Gehennas' Curse
 	[getName(24674)] = 0.25, -- Veil of Shadow
 	-- Wound Poison still uses a unique spellID/spellName despite the fact that it's a static 50% reduction.
@@ -1465,6 +1464,7 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(63038)] = 0.75, -- Dark Volley
 	[getName(52771)] = 0.75, -- Wounding Strike
 	[getName(48291)] = 0.75, -- Fetid Healing
+	[getName(34366)] = 0.75, -- Ebon Poison
 	[getName(54525)] = 0.80, -- Shroud of Darkness (This might be wrong)
 	[getName(48301)] = 0.80, -- Mind Trauma (Improved Mind Blast)
 	[getName(68391)] = 0.80, -- Permafrost, the debuff is generic no way of seeing 7/13/20, go with 20
