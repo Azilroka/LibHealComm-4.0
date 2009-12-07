@@ -21,8 +21,6 @@
 -- Can run as a standalone addon also, but, really, just embed it! :-)
 --
 
-print("loaded CTL")
-
 local CTL_VERSION = 21
 
 local _G = _G
