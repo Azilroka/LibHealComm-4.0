@@ -1439,6 +1439,7 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(34625)] = 0.25, -- Demolish
 	[getName(19716)] = 0.25, -- Gehennas' Curse
 	[getName(24674)] = 0.25, -- Veil of Shadow
+	[getName(69633)] = 0.25, -- Veil of Shadow, in German this is translated differently from the one above
 	-- Wound Poison still uses a unique spellID/spellName despite the fact that it's a static 50% reduction.
 	[getName(13218)] = 0.50, -- 1
 	[getName(13222)] = 0.50, -- 2
