@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 49
+local minor = 50
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -1406,6 +1406,16 @@ if( playerClass == "SHAMAN" ) then
 	end
 end
 
+local function getName(spellID)
+	local name = GetSpellInfo(spellID)
+	--@debug@
+	if( not name ) then
+		print(string.format("%s-r%s: Failed to find spellID %d", major, minor, spellID))
+	end
+	--@end-debug@
+	return name or ""
+end
+
 -- Healing modifiers
 HealComm.currentModifiers = HealComm.currentModifiers or {}
 
@@ -1420,15 +1430,7 @@ HealComm.selfModifiers = HealComm.selfModifiers or {
 	[31884] = 1.20, -- Avenging Wrath
 }
 
-local function getName(spellID)
-	local name = GetSpellInfo(spellID)
-	--@debug@
-	if( not name ) then
-		print(string.format("%s-r%s: Failed to find spellID %d", major, minor, spellID))
-	end
-	--@end-debug@
-	return name or ""
-end
+HealComm.selfModifiers[getName(72390)] = 0.75 -- Hopelessness
 
 -- The only spell in the game with a name conflict is Ray of Pain from the Nagrand Void Walkers
 HealComm.healingModifiers = HealComm.healingModifiers or {
@@ -1462,6 +1464,7 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(32315)] = 0.50, -- Soul Strike
 	[getName(60084)] = 0.50, -- The Veil of Shadow
 	[getName(45885)] = 0.50, -- Shadow Spike
+	[getName(69674)] = 0.50, -- Mutated Infection (Rotface)
 	[getName(63038)] = 0.75, -- Dark Volley
 	[getName(52771)] = 0.75, -- Wounding Strike
 	[getName(48291)] = 0.75, -- Fetid Healing
@@ -1472,6 +1475,7 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(52645)] = 0.80, -- Hex of Weakness
 	[getName(34073)] = 0.85, -- Curse of the Bleeding Hollow
 	[getName(43410)] = 0.90, -- Chop
+	[getName(70588)] = 0.90, -- Suppression (Valithria Dreamwalker NPCs?)
 	[getName(34123)] = 1.06, -- Tree of Life
 	[getName(64844)] = 1.10, -- Divine Hymn
 	[getName(47788)] = 1.40, -- Guardian Spirit
@@ -1479,13 +1483,6 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(31977)] = 1.50, -- Curse of Infinity
 	[getName(41350)] = 2.00, -- Aura of Desire
 }
-
-if( IS_BUILD30300 ) then
-	HealComm.healingModifiers[getName(70588)] = 0.90 -- Suppression (Valithria Dreamwalker NPCs?)
-	HealComm.healingModifiers[getName(69674)] = 0.50 -- Mutated Infection (Rotface)
-	--HealComm.healingModifiers[getName(71473)] = 2.00 -- Essence of the Blood Queen (Bood Queen Lana'thel)
-	HealComm.healingModifiers[getName(71473)] = false -- This no longer gives healing apparently?
-end
 
 HealComm.healingStackMods = HealComm.healingStackMods or {
 	-- Tenacity
