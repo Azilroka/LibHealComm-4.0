@@ -652,7 +652,7 @@ if( playerClass == "DRUID" ) then
 		--itemSetsData["T8 Resto"] = {46183, 46184, 46185, 46186, 46187, 45345, 45346, 45347, 45348, 45349} 
 		--itemSetsData["T9 Resto"] = {48102, 48129, 48130, 48131, 48132, 48153, 48154, 48155, 48156, 48157, 48133, 48134, 48135, 48136, 48137, 48142, 48141, 48140, 48139, 48138, 48152, 48151, 48150, 48149, 48148, 48143, 48144, 48145, 48146, 48147}
 		-- 2 piece, 30% less healing lost on WG
-		itemSetsData["T10 Resto"] = {50106, 50107, 50108, 50109, 50113, 51139, 51138, 51137, 51136, 51135}
+		itemSetsData["T10 Resto"] = {50106, 50107, 50108, 50109, 50113, 51139, 51138, 51137, 51136, 51135, 51300, 51301, 51302, 51303, 51304}
 		
 		local hotTotals, hasRegrowth = {}, {}
 		AuraHandler = function(unit, guid)
@@ -941,6 +941,8 @@ if( playerClass == "PALADIN" ) then
 		local DivineFavor = GetSpellInfo(20216)
 		-- Seal of Light + Glyph = 5% healing
 		local SealofLight = GetSpellInfo(20165)
+		-- Divine Illumination, used in T10 holy
+		local DivineIllumination = GetSpellInfo(31842)
 		
 		local flashLibrams = {[42615] = 375, [42614] = 331, [42613] = 293, [42612] = 204, [28592] = 89, [25644] = 79, [23006] = 43, [23201] = 28}
 		local holyLibrams = {[45436] = 160, [40268] = 141, [28296] = 47}
@@ -949,6 +951,7 @@ if( playerClass == "PALADIN" ) then
 		--itemSetsData["T8 Holy"] = { 45370, 45371, 45372, 45373, 45374, 46178, 46179, 46180, 46181, 46182 }
 		-- +100% to the hot when using Flash of Light + Sacred Shield
 		--itemSetsData["T9 Holy"] = { 48595, 48596, 48597, 48598, 48599, 48564, 48566, 48568, 48572, 48574, 48593, 48591, 48592, 48590, 48594, 48588, 48586, 48587, 48585, 48589, 48576, 48578, 48577, 48579, 48575, 48583, 48581, 48582, 48580, 48584}
+		itemSetsData["T10 Holy"] = {50865, 50866, 50867, 50868, 50869, 51270, 51271, 51272, 51273, 51274, 51165, 51166, 51167, 51168, 51169}
 				
 		-- Need the GUID of whoever has beacon on them so we can make sure they are visible to us and so we can check the mapping
 		local activeBeaconGUID, hasDivineFavor
@@ -1004,10 +1007,16 @@ if( playerClass == "PALADIN" ) then
 				end
 			end
 			
+			-- +35% healing while Divine Illumination is active
+			if( itemSetsData["T10 Holy"] >= 2 and unitHasAura("player", DivineIllumination) ) then
+				healModifier = healModifier + 0.35
+			end
+			
+			
 			-- Normal calculations
 			spellPower = spellPower * (spellData[spellName].coeff * 1.88)
 			healAmount = calculateGeneralAmount(spellData[spellName].levels[rank], healAmount, spellPower, spModifier, healModifier)
-	
+			
 			-- Divine Favor, 100% chance to crit
 			if( hasDivineFavor ) then
 				hasDivineFavor = nil
