@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 50
+local minor = 52
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -697,7 +697,7 @@ if( playerClass == "DRUID" ) then
 			local spellPower = GetSpellBonusHealing()
 			local healModifier, spModifier = playerHealModifier, 1
 			local bombAmount, totalTicks
-			
+						
 			healModifier = healModifier + talentData[GiftofNature].current
 			healModifier = healModifier + talentData[Genesis].current
 					
@@ -784,7 +784,6 @@ if( playerClass == "DRUID" ) then
 				if( glyphCache[54826] ) then totalTicks = totalTicks + 1 end
 				-- Nature's Splendor, +2 seconds
 				if( talentData[NaturesSplendor].mod >= 1 ) then totalTicks = totalTicks + 1 end
-
 			-- Wild Growth
 			elseif( spellName == WildGrowth ) then
 				spellPower = spellPower * (hotData[spellName].coeff * (1 + talentData[EmpoweredRejuv].current))
@@ -792,12 +791,11 @@ if( playerClass == "DRUID" ) then
 				spellPower = calculateSpellPower(hotData[spellName].levels[rank], spellPower)
 				healAmount = healAmount / hotData[spellName].ticks
 				
-				--if( equippedSetCache["T10 Resto"] >= 2 ) then
-								
 				table.wipe(wgTicks)
-				local tickModifier = healAmount / hotData[spellName].ticks
+				local tickModifier = equippedSetCache["T10 Resto"] >= 2 and 0.70 or 1
+				local tickAmount = healAmount / hotData[spellName].ticks
 				for i=1, hotData[spellName].ticks do
-					table.insert(wgTicks, math.ceil(healModifier * ((healAmount + tickModifier * (4 - i)) + (spellPower * spModifier))))
+					table.insert(wgTicks, math.ceil(healModifier * ((healAmount + tickAmount * (3 - (i - 1) * tickModifier)) + (spellPower * spModifier))))
 				end
 				
 				return HOT_HEALS, wgTicks, hotData[spellName].ticks, hotData[spellName].interval, nil, true
