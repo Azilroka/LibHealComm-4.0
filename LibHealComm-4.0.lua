@@ -1010,7 +1010,7 @@ if( playerClass == "PALADIN" ) then
 			end
 			
 			-- +35% healing while Divine Illumination is active
-			if( itemSetsData["T10 Holy"] >= 2 and unitHasAura("player", DivineIllumination) ) then
+			if( equippedSetCache["T10 Holy"] >= 2 and unitHasAura("player", DivineIllumination) ) then
 				healModifier = healModifier + 0.35
 			end
 			
