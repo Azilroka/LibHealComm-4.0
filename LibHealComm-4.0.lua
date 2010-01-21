@@ -52,9 +52,9 @@ local playerClass = select(2, UnitClass("player"))
 local isHealerClass = playerClass == "DRUID" or playerClass == "PRIEST" or playerClass == "SHAMAN" or playerClass == "PALADIN"
 
 -- Stolen from Threat-2.0, compresses GUIDs from 18 characters to around 8 - 9, 50%/55% savings
--- 44 = , / 58 = : / 255 = \255 / 0 = line break? / 64 = @
+-- 44 = , / 58 = : / 255 = \255 / 0 = line break / 64 = @ / 254 = FE, used for escape code so has to be escaped
 if( not HealComm.compressGUID ) then
-	local map = {[58] = "\254\250", [64] = "\254\251",  [44] = "\254\252", [255] = "\254\253", [0] = "\255"}
+	local map = {[58] = "\254\250", [64] = "\254\251",  [44] = "\254\252", [255] = "\254\253", [0] = "\255", [254] = "\254\249"}
 	local function guidCompressHelper(x)
 	   local a = tonumber(x, 16)
 	   return map[a] or string.char(a)
@@ -66,7 +66,8 @@ if( not HealComm.compressGUID ) then
 		str = string.gsub(str, "\254\250", "\058")
 		str = string.gsub(str, "\254\251", "\064")
 		str = string.gsub(str, "\254\252", "\044")
-		return string.gsub(str, "\254\253", "\255")
+		str = string.gsub(str, "\254\253", "\255")
+		return string.gsub(str, "\254\249", "\254")
 	end
 	
 	HealComm.compressGUID = setmetatable({}, {
