@@ -53,7 +53,7 @@ local isHealerClass = playerClass == "DRUID" or playerClass == "PRIEST" or playe
 
 -- Stolen from Threat-2.0, compresses GUIDs from 18 characters to around 8 - 9, 50%/55% savings
 -- 44 = , / 58 = : / 255 = \255 / 0 = line break / 64 = @ / 254 = FE, used for escape code so has to be escaped
-if( not HealComm.compressGUID ) then
+if( not HealComm.compressGUID or not HealComm.fixedCompress ) then
 	local map = {[58] = "\254\250", [64] = "\254\251",  [44] = "\254\252", [255] = "\254\253", [0] = "\255", [254] = "\254\249"}
 	local function guidCompressHelper(x)
 	   local a = tonumber(x, 16)
@@ -70,6 +70,7 @@ if( not HealComm.compressGUID ) then
 		return string.gsub(str, "\254\249", "\254")
 	end
 	
+	HealComm.fixedCompress = true
 	HealComm.compressGUID = setmetatable({}, {
 		__index = function(tbl, guid)
 			local cguid = string.match(guid, "0x(.*)")
