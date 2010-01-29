@@ -1011,9 +1011,8 @@ if( playerClass == "PALADIN" ) then
 			
 			-- +35% healing while Divine Illumination is active
 			if( equippedSetCache["T10 Holy"] >= 2 and unitHasAura("player", DivineIllumination) ) then
-				healModifier = healModifier + 0.35
+				healModifier = healModifier * 1.35
 			end
-			
 			
 			-- Normal calculations
 			spellPower = spellPower * (spellData[spellName].coeff * 1.88)
