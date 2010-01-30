@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 52
+local minor = 53
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -677,7 +677,7 @@ if( playerClass == "DRUID" ) then
 				local playerGroup = guidToGroup[playerGUID]
 				
 				for groupGUID, id in pairs(guidToGroup) do
-					if( id == playerGroup and playerGUID ~= groupGUID and IsSpellInRange(Innervate, guidToUnit[groupGUID]) == 1 ) then
+					if( id == playerGroup and playerGUID ~= groupGUID and not UnitHasVehicleUI(guidToUnit[groupID]) and IsSpellInRange(Innervate, guidToUnit[groupGUID]) == 1 ) then
 						targets = targets .. "," .. compressGUID[groupGUID]
 					end
 				end
@@ -1116,7 +1116,8 @@ if( playerClass == "PRIEST" ) then
 				local group = guidToGroup[guid]
 				
 				for groupGUID, id in pairs(guidToGroup) do
-					if( id == group and guid ~= groupGUID and UnitIsVisible(guidToUnit[groupGUID]) ) then
+					local unit = guidToUnit[groupGUID]
+					if( id == group and guid ~= groupGUID and UnitIsVisible(unit) and not UnitHasVehicle(unit) ) then
 						targets = targets .. "," .. compressGUID[groupGUID]
 					end
 				end
@@ -1515,7 +1516,7 @@ local healingModifiers, currentModifiers = HealComm.healingModifiers, HealComm.c
 local distribution
 local CTL = ChatThrottleLib
 local function sendMessage(msg)
-	if( distribution ) then
+	if( distribution and string.len(msg) <= 240 ) then
 		CTL:SendAddonMessage("BULK", COMM_PREFIX, msg, distribution)
 	end
 end
@@ -2522,17 +2523,22 @@ end
 function HealComm:UNIT_PET(unit)
 	local pet = self.unitToPet[unit]
 	local guid = pet and UnitGUID(pet)
+	
+	-- We have an active pet guid from this user and it's different, kill it
+	local activeGUID = activePets[unit]
+	if( activeGUID and activeGUID ~= guid ) then
+		removeAllRecords(activeGUID)
+
+		guidToUnit[activeGUID] = nil
+		guidToGroup[actieGUID] = nil
+		activePets[actieGUID] = nil
+	end
+
+	-- Add the new record
 	if( guid ) then
 		guidToUnit[guid] = pet
 		guidToGroup[guid] = guidToGroup[UnitGUID(unit)]
 		activePets[unit] = guid
-	-- This used to be an active pet, need to invalidate pending heals
-	elseif( activePets[unit] and guidToUnit[guid] ) then
-		removeAllRecords(activePets[unit])
-
-		guidToUnit[guid] = nil
-		guidToGroup[guid] = nil
-		activePets[unit] = nil
 	end
 end
 
