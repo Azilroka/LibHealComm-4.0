@@ -2530,8 +2530,8 @@ function HealComm:UNIT_PET(unit)
 		removeAllRecords(activeGUID)
 
 		guidToUnit[activeGUID] = nil
-		guidToGroup[actieGUID] = nil
-		activePets[actieGUID] = nil
+		guidToGroup[activeGUID] = nil
+		activePets[activeGUID] = nil
 	end
 
 	-- Add the new record
