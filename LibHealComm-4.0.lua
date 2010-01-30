@@ -1117,7 +1117,7 @@ if( playerClass == "PRIEST" ) then
 				
 				for groupGUID, id in pairs(guidToGroup) do
 					local unit = guidToUnit[groupGUID]
-					if( id == group and guid ~= groupGUID and UnitIsVisible(unit) and not UnitHasVehicle(unit) ) then
+					if( id == group and guid ~= groupGUID and UnitIsVisible(unit) and not UnitHasVehicleUI(unit) ) then
 						targets = targets .. "," .. compressGUID[groupGUID]
 					end
 				end
