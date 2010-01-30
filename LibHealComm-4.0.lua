@@ -2531,7 +2531,7 @@ function HealComm:UNIT_PET(unit)
 
 		guidToUnit[activeGUID] = nil
 		guidToGroup[activeGUID] = nil
-		activePets[activeGUID] = nil
+		activePets[unit] = nil
 	end
 
 	-- Add the new record
