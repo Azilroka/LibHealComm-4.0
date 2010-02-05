@@ -530,6 +530,9 @@ local function calculateGeneralAmount(level, amount, spellPower, spModifier, hea
 	-- Apply further downranking penalities
 	spellPower = spellPower * (penalty * math.min(1, math.max(0, 1 - (playerLevel - level - 11) * 0.05)))
 				
+	-- Apply zone modifier
+	healModifier = healModifier * HealComm.zoneHealModifier
+
 	-- Do the general factoring
 	return healModifier * (amount + (spellPower * spModifier))
 end
@@ -699,7 +702,6 @@ if( playerClass == "DRUID" ) then
 			local spellPower = GetSpellBonusHealing()
 			local healModifier, spModifier = playerHealModifier, 1
 			local bombAmount, totalTicks
-						
 			healModifier = healModifier + talentData[GiftofNature].current
 			healModifier = healModifier + talentData[Genesis].current
 					
@@ -770,6 +772,8 @@ if( playerClass == "DRUID" ) then
 				spellPower = spellPower * (hotData[spellName].coeff * (1 + talentData[EmpoweredRejuv].current))
 				spellPower = spellPower / hotData[spellName].ticks
 				healAmount = healAmount / hotData[spellName].ticks
+				-- Figure out total ticks
+				totalTicks = 7
 				
 				-- Idol of Lush Moss, +125 SP per tick
 				if( playerCurrentRelic == 40711 ) then
@@ -778,10 +782,7 @@ if( playerClass == "DRUID" ) then
 				elseif( playerCurrentRelic == 27886 ) then
 					spellPower = spellPower + 47
 				end
-				
-				-- Figure out total ticks
-				totalTicks = 7
-				
+								
 				-- Glyph of Lifebloom, +1 second
 				if( glyphCache[54826] ) then totalTicks = totalTicks + 1 end
 				-- Nature's Splendor, +2 seconds
@@ -792,6 +793,7 @@ if( playerClass == "DRUID" ) then
 				spellPower = spellPower / hotData[spellName].ticks
 				spellPower = calculateSpellPower(hotData[spellName].levels[rank], spellPower)
 				healAmount = healAmount / hotData[spellName].ticks
+				healModifier = healModifier * HealComm.zoneHealModifier
 				
 				table.wipe(wgTicks)
 				local tickModifier = equippedSetCache["T10 Resto"] >= 2 and 0.70 or 1
@@ -799,7 +801,7 @@ if( playerClass == "DRUID" ) then
 				for i=1, hotData[spellName].ticks do
 					table.insert(wgTicks, math.ceil(healModifier * ((healAmount + tickAmount * (3 - (i - 1) * tickModifier)) + (spellPower * spModifier))))
 				end
-				
+
 				return HOT_HEALS, wgTicks, hotData[spellName].ticks, hotData[spellName].interval, nil, true
 			end
 	
@@ -1559,7 +1561,14 @@ end
 
 -- Figure out where we should be sending messages and wipe some caches
 function HealComm:ZONE_CHANGED_NEW_AREA()
+	local pvpType = GetZonePVPInfo()
 	local type = select(2, IsInInstance())
+	
+	HealComm.zoneHealModifier = 1
+	if( pvpType == "combat" or type == "arena" or type == "pvp" ) then
+		HealComm.zoneHealModifier = 0.90
+	end
+	
 	if( type ~= instanceType ) then
 		instanceType = type
 		
@@ -1595,6 +1604,7 @@ local function recalculatePlayerModifiers()
 	
 	playerHealModifier = increase * decrease
 end
+
 
 local alreadyAdded = {}
 function HealComm:UNIT_AURA(unit)
