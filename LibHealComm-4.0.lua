@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 54
+local minor = 55
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -1221,10 +1221,9 @@ if( playerClass == "PRIEST" ) then
 				healAmount = healAmount * 1.50
 			end
 					
-			-- Penance ticks 3 times, but the first one is instant and as it will land before the comm get there, pretend that
-			-- it only has two ticks.
+			-- Penance ticks 3 times, the player will see all 3 ticks, everyone else should only see the last 2
 			if( spellName == Penance ) then
-				return CHANNEL_HEALS, math.ceil(healAmount), 2
+				return CHANNEL_HEALS, math.ceil(healAmount), 2, 3
 			end
 					
 			return DIRECT_HEALS, math.ceil(healAmount)
@@ -1815,9 +1814,9 @@ local function parseChannelHeal(casterGUID, spellID, amount, totalTicks, ...)
 	pending.spellID = spellID
 	pending.isMultiTarget = (select("#", ...) / inc) > 1
 	pending.bitType = CHANNEL_HEALS
-	
+		
 	loadHealList(pending, amount, 1, 0, math.ceil(pending.duration / pending.tickInterval), ...)
-
+	
 	HealComm.callbacks:Fire("HealComm_HealStarted", casterGUID, spellID, pending.bitType, pending.endTime, unpack(tempPlayerList))
 end
 
@@ -2288,14 +2287,14 @@ function HealComm:UNIT_SPELLCAST_START(unit, spellName, spellRank, id)
 	castID = id
 
 	-- Figure out who we are healing and for how much
-	local type, amount, ticks = CalculateHealing(castGUID, spellName, spellRank)
+	local type, amount, ticks, localTicks = CalculateHealing(castGUID, spellName, spellRank)
 	local targets, amount = GetHealTargets(type, castGUID, math.max(amount, 0), spellName)
 	
 	if( type == DIRECT_HEALS ) then
 		parseDirectHeal(playerGUID, self.spellToID[nameID], amount, string.split(",", targets))
 		sendMessage(string.format("D::%d:%d:%s", self.spellToID[nameID] or 0, amount or "", targets))
 	elseif( type == CHANNEL_HEALS ) then
-		parseChannelHeal(playerGUID, self.spellToID[nameID], amount, ticks, string.split(",", targets))
+		parseChannelHeal(playerGUID, self.spellToID[nameID], amount, localTicks, string.split(",", targets))
 		sendMessage(string.format("C::%d:%d:%s:%s", self.spellToID[nameID] or 0, amount, ticks, targets))
 	end
 end
