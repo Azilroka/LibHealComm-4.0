@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 55
+local minor = 56
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -380,11 +380,11 @@ function HealComm:GetNextHealAmount(guid, bitFlag, time, ignoreGUID)
 	local currentTime = GetTime()
 	
 	for casterGUID, spells in pairs(pendingHeals) do
-		for _, pending in pairs(spells) do
-			if( pending.bitType and bit.band(pending.bitType, bitFlag) > 0 ) then
-				for i=1, #(pending), 5 do
-					local guid = pending[i]
-					if( not ignoreGUID or ignoreGUID ~= guid ) then
+		if( not ignoreGUID or ignoreGUID ~= casterGUID ) then
+			for _, pending in pairs(spells) do
+				if( pending.bitType and bit.band(pending.bitType, bitFlag) > 0 ) then
+					for i=1, #(pending), 5 do
+						local guid = pending[i]
 						local amount = pending[i + 1]
 						local stack = pending[i + 2]
 						local endTime = pending[i + 3]
