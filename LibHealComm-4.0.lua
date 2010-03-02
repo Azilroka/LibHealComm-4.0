@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 56
+local minor = 57
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -1427,6 +1427,12 @@ local function getName(spellID)
 end
 
 -- Healing modifiers
+if( not HealComm.aurasUpdated ) then
+	HealComm.aurasUpdated = true
+	HealComm.selfModifiers = nil
+	HealComm.healingModifiers = nil
+end
+
 HealComm.currentModifiers = HealComm.currentModifiers or {}
 
 HealComm.selfModifiers = HealComm.selfModifiers or {
@@ -1438,9 +1444,13 @@ HealComm.selfModifiers = HealComm.selfModifiers or {
 	[72221] = 1.05, -- Luck of the Draw
 	[70873] = 1.10, -- Emerald Vigor (Valithria Dreamwalker)
 	[31884] = 1.20, -- Avenging Wrath
+	[72393] = 0.25, -- Hopelessness
+	[72397] = 0.40, -- Hopelessness
+	[72391] = 0.50, -- Hopelessness
+	[72396] = 0.60, -- Hopelessness
+	[72390] = 0.75, -- Hopelessness
+	[72395] = 0.80, -- Hopelessness
 }
-
-HealComm.selfModifiers[getName(72390)] = 0.75 -- Hopelessness
 
 -- The only spell in the game with a name conflict is Ray of Pain from the Nagrand Void Walkers
 HealComm.healingModifiers = HealComm.healingModifiers or {
@@ -1492,6 +1502,18 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[getName(38387)] = 1.50, -- Bane of Infinity
 	[getName(31977)] = 1.50, -- Curse of Infinity
 	[getName(41350)] = 2.00, -- Aura of Desire
+	[getName(73762)] = 1.05, -- Strength of Wrynn (5%)
+	[getName(73816)] = 1.05, -- Hellscream's Warsong (5%)
+	[getName(73824)] = 1.10, -- Strength of Wrynn (10%)
+	[getName(73818)] = 1.10, -- Hellscream's Warsong (10%)
+	[getName(73825)] = 1.15, -- Strength of Wrynn (15%)
+	[getName(73819)] = 1.15, -- Hellscream's Warsong (15%)
+	[getName(73826)] = 1.20, -- Strength of Wrynn (20%)
+	[getName(73820)] = 1.20, -- Hellscream's Warsong (20%)
+	[getName(73827)] = 1.25, -- Strength of Wrynn (25%)
+	[getName(73821)] = 1.25, -- Hellscream's Warsong (25%)
+	[getName(73828)] = 1.30, -- Strength of Wrynn (30%)
+	[getName(73822)] = 1.30, -- Hellscream's Warsong (30%)
 }
 
 HealComm.healingStackMods = HealComm.healingStackMods or {
