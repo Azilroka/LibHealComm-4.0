@@ -948,8 +948,9 @@ if( playerClass == "PALADIN" ) then
 		-- Divine Illumination, used in T10 holy
 		local DivineIllumination = GetSpellInfo(31842)
 		
-		local flashLibrams = {[42615] = 375, [42614] = 331, [42613] = 293, [42612] = 204, [28592] = 89, [25644] = 79, [23006] = 43, [23201] = 28}
+		local flashLibrams = {[42616] = 436, [42615] = 375, [42614] = 331, [42613] = 293, [42612] = 204, [28592] = 89, [25644] = 79, [23006] = 43, [23201] = 28}
 		local holyLibrams = {[45436] = 160, [40268] = 141, [28296] = 47}
+		local flashSPLibrams = {[51472] = 510}
 		
 		-- Holy Shock crits put a hot that heals for 15% of the HS over 9s
 		--itemSetsData["T8 Holy"] = { 45370, 45371, 45372, 45373, 45374, 46178, 46179, 46180, 46181, 46182 }
@@ -996,18 +997,20 @@ if( playerClass == "PALADIN" ) then
 			
 			-- Glyph of Seal of Light, +5% healing if the player has Seal of Light up
 			if( glyphCache[54943] and unitHasAura("player", SealofLight) ) then
-				healModifier = healModifier * 1.05
+				healModifier = healModifier + 0.05
 			end
 			
+			healModifier = healModifier + talentData[HealingLight].current
 			healModifier = healModifier * (1 + talentData[Divinity].current)
-			healModifier = healModifier * (1 + talentData[HealingLight].current)
 			
 			-- Apply extra spell power based on libram
 			if( playerCurrentRelic ) then
 				if( spellName == HolyLight and holyLibrams[playerCurrentRelic] ) then
-					spellPower = spellPower + holyLibrams[playerCurrentRelic]
+					healAmount = healAmount + (holyLibrams[playerCurrentRelic] * 0.805)
 				elseif( spellName == FlashofLight and flashLibrams[playerCurrentRelic] ) then
-					spellPower = spellPower + flashLibrams[playerCurrentRelic]
+					healAmount = healAmount + (flashLibrams[playerCurrentRelic] * 0.805)
+				elseif( spellNAme == FlashofLight and flashSPLibrams[playerCurrentRelic] ) then
+					spellPower = spellPower + flashSPLibrams[playerCurrentRelic]
 				end
 			end
 			
@@ -1023,10 +1026,10 @@ if( playerClass == "PALADIN" ) then
 			-- Divine Favor, 100% chance to crit
 			if( hasDivineFavor ) then
 				hasDivineFavor = nil
-				healAmount = healAmount * (1.50 + talentData[TouchedbytheLight].current)
+				healAmount = healAmount * (1.50 * talentData[TouchedbytheLight].current)
 			-- Or the player has over a 100% chance to crit with Holy spells
 			elseif( GetSpellCritChance(2) >= 100 ) then
-				healAmount = healAmount * (1.50 + talentData[TouchedbytheLight].current)
+				healAmount = healAmount * (1.50 * talentData[TouchedbytheLight].current)
 			end
 			
 			return DIRECT_HEALS, math.ceil(healAmount)
