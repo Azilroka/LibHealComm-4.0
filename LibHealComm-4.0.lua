@@ -1009,7 +1009,7 @@ if( playerClass == "PALADIN" ) then
 					healAmount = healAmount + (holyLibrams[playerCurrentRelic] * 0.805)
 				elseif( spellName == FlashofLight and flashLibrams[playerCurrentRelic] ) then
 					healAmount = healAmount + (flashLibrams[playerCurrentRelic] * 0.805)
-				elseif( spellNAme == FlashofLight and flashSPLibrams[playerCurrentRelic] ) then
+				elseif( spellName == FlashofLight and flashSPLibrams[playerCurrentRelic] ) then
 					spellPower = spellPower + flashSPLibrams[playerCurrentRelic]
 				end
 			end
@@ -1584,6 +1584,11 @@ local function updateDistributionChannel()
 end
 
 -- Figure out where we should be sending messages and wipe some caches
+function HealComm:PLAYER_ENTERING_WORLD()
+	HealComm.eventFrame:UnregisterEvent("PLAYER_ENTERING_WORLD")
+	HealComm:ZONE_CHANGED_NEW_AREA()
+end
+
 function HealComm:ZONE_CHANGED_NEW_AREA()
 	local pvpType = GetZonePVPInfo()
 	local type = select(2, IsInInstance())
@@ -2762,6 +2767,7 @@ function HealComm:PLAYER_LOGIN()
 
 	self.eventFrame:UnregisterEvent("PLAYER_LOGIN")
 	self.eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+	self.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 	self.eventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 	self.eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
 	
