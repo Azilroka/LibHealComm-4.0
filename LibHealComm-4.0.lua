@@ -1024,12 +1024,10 @@ if( playerClass == "PALADIN" ) then
 			healAmount = calculateGeneralAmount(spellData[spellName].levels[rank], healAmount, spellPower, spModifier, healModifier)
 			
 			-- Divine Favor, 100% chance to crit
-			if( hasDivineFavor ) then
+			-- ... or the player has over a 100% chance to crit with Holy spells
+			if( hasDivineFavor or GetSpellCritChance(2) >= 100 ) then
 				hasDivineFavor = nil
-				healAmount = healAmount * (1.50 * talentData[TouchedbytheLight].current)
-			-- Or the player has over a 100% chance to crit with Holy spells
-			elseif( GetSpellCritChance(2) >= 100 ) then
-				healAmount = healAmount * (1.50 * talentData[TouchedbytheLight].current)
+				healAmount = healAmount * (1.50 * (1 + talentData[TouchedbytheLight].current))
 			end
 			
 			return DIRECT_HEALS, math.ceil(healAmount)
