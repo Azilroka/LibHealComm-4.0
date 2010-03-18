@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 58
+local minor = 59
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
