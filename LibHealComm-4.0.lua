@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 59
+local minor = 60
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -897,7 +897,7 @@ if( playerClass == "DRUID" ) then
 			end
 			
 			if( spellData[spellName].ticks ) then
-				return CHANNEL_HEALS, math.ceil(healAmount), spellData[spellName].ticks
+				return CHANNEL_HEALS, math.ceil(healAmount), spellData[spellName].ticks, spellData[spellName].ticks
 			end
 			
 			return DIRECT_HEALS, math.ceil(healAmount)
