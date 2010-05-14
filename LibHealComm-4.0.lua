@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 60
+local minor = 61
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -1256,7 +1256,7 @@ if( playerClass == "SHAMAN" ) then
 		-- Lesser Healing Wave
 		local LesserHealingWave = GetSpellInfo(8004)
 		spellData[LesserHealingWave] = {coeff = 1.5 / 3.5, levels = {20, 28, 36, 44, 52, 60, 66, 72, 77}, increase = {102, 109, 110, 108, 100, 84, 58, 40, 18},
-			averages = {avg(162, 186), avg(247, 281), avg(337, 381), avg(458, 514), avg(631, 05), avg(832, 928), avg(1039, 1185), avg(1382, 1578), avg(1606, 1834)}}
+			averages = {avg(162, 186), avg(247, 281), avg(337, 381), avg(458, 514), avg(631, 705), avg(832, 928), avg(1039, 1185), avg(1382, 1578), avg(1606, 1834)}}
 		
 		-- Talent data
 		local EarthShield = GetSpellInfo(49284)
