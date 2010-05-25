@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 61
+local minor = 62
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -1521,6 +1521,8 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 }
 
 HealComm.healingStackMods = HealComm.healingStackMods or {
+	-- Enervating Band
+	[getName(74502)] = function(name, rank, icon, stacks) return 1 - stacks * 0.02 end,
 	-- Tenacity
 	[getName(58549)] = function(name, rank, icon, stacks) return icon == "Interface\\Icons\\Ability_Warrior_StrengthOfArms" and stacks ^ 1.18 or 1 end,
 	-- Focused Will
