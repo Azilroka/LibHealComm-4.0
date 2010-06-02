@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 62
+local minor = 63
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -658,6 +658,8 @@ if( playerClass == "DRUID" ) then
 		-- 2 piece, 30% less healing lost on WG
 		itemSetsData["T10 Resto"] = {50106, 50107, 50108, 50109, 50113, 51139, 51138, 51137, 51136, 51135, 51300, 51301, 51302, 51303, 51304}
 		
+		local bloomBombIdols = {[28355] = 87, [33076] = 105, [33841] = 116, [35021] = 131, [42576] = 188, [42577] = 217, [42578] = 246, [42579] = 294, [42580] = 376, [51423] = 448}
+		
 		local hotTotals, hasRegrowth = {}, {}
 		AuraHandler = function(unit, guid)
 			hotTotals[guid] = 0
@@ -764,7 +766,12 @@ if( playerClass == "DRUID" ) then
 			-- Lifebloom
 			elseif( spellName == Lifebloom ) then
 				-- Figure out the bomb heal, apparently Gift of Nature double dips and will heal 10% for the HOT + 10% again for the direct heal
-				local bombSpell = spellPower * (hotData[spellName].dhCoeff * 1.88)
+				local bombSpellPower = spellPower
+				if( playerCurrentRelic and bloomBombIdols[playerCurrentRelic] ) then
+					bombSpellPower = bombSpellPower + bloomBombIdols[playerCurrentRelic]
+				end
+				
+				local bombSpell = bombSpellPower * (hotData[spellName].dhCoeff * 1.88)
 				bombAmount = math.ceil(calculateGeneralAmount(hotData[spellName].levels[rank], hotData[spellName].bomb[rank], bombSpell, spModifier, healModifier + talentData[GiftofNature].current))
 			
 				-- Figure out the hot tick healing
