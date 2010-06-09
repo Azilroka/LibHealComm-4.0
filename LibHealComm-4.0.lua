@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 63
+local minor = 64
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -20,6 +20,7 @@ HealComm.ALL_HEALS, HealComm.CHANNEL_HEALS, HealComm.DIRECT_HEALS, HealComm.HOT_
 
 local COMM_PREFIX = "LHC40"
 local playerGUID, playerName, playerLevel
+local playerHealModifier = 1
 local IS_BUILD30300 = tonumber((select(4, GetBuildInfo()))) >= 30300
 
 HealComm.callbacks = HealComm.callbacks or LibStub:GetLibrary("CallbackHandler-1.0"):New(HealComm)
@@ -350,6 +351,11 @@ local function clearPendingHeals()
 end
 
 -- APIs
+-- Returns the players current heaing modifier
+function HealComm:GetPlayerHealingMod()
+	return playerHealModifier or 1
+end
+
 -- Returns the current healing modifier for the GUID
 function HealComm:GetHealModifier(guid)
 	return HealComm.currentModifiers[guid] or 1
@@ -505,8 +511,7 @@ end
 
 -- Healing class data
 -- Thanks to Gagorian (DrDamage) for letting me steal his formulas and such
-local playerHealModifier, playerCurrentRelic = 1
-
+local playerCurrentRelic
 local averageHeal, rankNumbers = HealComm.averageHeal, HealComm.rankNumbers
 local guidToUnit, guidToGroup, glyphCache = HealComm.guidToUnit, HealComm.guidToGroup, HealComm.glyphCache
 
