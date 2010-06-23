@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 65
+local minor = 66
 assert(LibStub, string.format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -2305,7 +2305,7 @@ function HealComm:UNIT_SPELLCAST_SENT(unit, spellName, spellRank, castOn)
 end
 
 function HealComm:UNIT_SPELLCAST_START(unit, spellName, spellRank, id)
-	if( unit ~= "player" or not spellData[spellName] or not averageHeal[spellName][spellRank] ) then return end
+	if( unit ~= "player" or not spellData[spellName] or not averageHeal[spellName][spellRank] or UnitIsCharmed("player") or not UnitPlayerControlled("player") ) then return end
 	local nameID = spellName .. spellRank
 	local castGUID = castGUIDs[nameID]
 	if( not castGUID ) then
