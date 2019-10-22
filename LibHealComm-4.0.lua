@@ -989,7 +989,7 @@ if( playerClass == "PALADIN" ) then
 
 			if( hasDivineFavor or GetSpellCritChance(2) >= 100 ) then
 				hasDivineFavor = nil
-				healAmount = healAmount * (1.50 * (1 + talentData[TouchedbytheLight].current))
+				healAmount = healAmount * (1.50 * (1 + (WotLK and talentData[TouchedbytheLight].current or 0)))
 			end
 
 			return DIRECT_HEALS, ceil(healAmount)
