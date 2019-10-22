@@ -516,7 +516,6 @@ end
 -- Healing class data
 -- Thanks to Gagorian (DrDamage) for letting me steal his formulas and such
 local playerCurrentRelic
-local averageHeal, rankNumbers = HealComm.averageHeal, HealComm.rankNumbers
 local guidToUnit, guidToGroup, glyphCache = HealComm.guidToUnit, HealComm.guidToGroup, HealComm.glyphCache
 
 -- UnitBuff priortizes our buffs over everyone elses when there is a name conflict, so yay for that
@@ -1387,10 +1386,10 @@ end
 if( playerClass == "WARLOCK" ) then
 	LoadClassData = function()
 		local HealthFunnel = GetSpellInfo(755)
-		local DrainLife = GetSpellInfo(755)
+		local DrainLife = GetSpellInfo(689)
 
-		spellData[HealthFunnel] = { interval = 1, levels = { 12, 20, 28, 36, 44, 52, 60 }, ticks = 10, averages = {11, 23, 42, 63, 88, 118, 152 } }
-		spellData[DrainLife] = { interval = 1, levels = { 14, 22, 30, 38, 46, 54 }, ticks = 5, averages = {10, 16, 29, 41, 55, 71 } }
+		spellData[HealthFunnel] = { interval = 1, levels = { 12, 20, 28, 36, 44, 52, 60 }, ticks = 10, averages = { 11, 23, 42, 63, 88, 118, 152 } }
+		spellData[DrainLife] = { interval = 1, levels = { 14, 22, 30, 38, 46, 54 }, ticks = 5, averages = { 10, 16, 29, 41, 55, 71 } }
 
 		GetHealTargets = function(bitType, guid, healAmount, spellID)
 			return compressGUID[UnitGUID("pet")], healAmount
@@ -1512,7 +1511,7 @@ HealComm.healingStackMods = HealComm.healingStackMods or {
 	-- Tenacity
 	[58549] = function(name, rank, icon, stacks) return icon == "Interface\\Icons\\Ability_Warrior_StrengthOfArms" and stacks ^ 1.18 or 1 end,
 	-- Focused Will
-	[45242] = function(name, rank, icon, stacks) return 1 + (stacks * (0.02 + rankNumbers[rank] / 100)) end,
+	--[45242] = function(name, rank, icon, stacks) return 1 + (stacks * (0.02 + rankNumbers[rank] / 100)) end,
 	-- Nether Portal - Dominance
 	[30423] = function(name, rank, icon, stacks) return 1 + stacks * 0.01 end,
 	-- Dark Touched
@@ -1696,14 +1695,7 @@ HealComm.GLYPH_ADDED = HealComm.GlyphsUpdated
 HealComm.GLYPH_REMOVED = HealComm.GlyphsUpdated
 HealComm.GLYPH_UPDATED = HealComm.GlyphsUpdated
 
--- Invalidate he average cache to recalculate for spells that increase in power due to leveling up (but not training new ranks)
 function HealComm:PLAYER_LEVEL_UP(level)
-	for spell, average in pairs(averageHeal) do
-		wipe(average)
-
-		average.spell = spell
-	end
-
 	-- WoWProgramming says this is a string, why this is a string I do not know.
 	playerLevel = tonumber(level) or UnitLevel("player")
 end
