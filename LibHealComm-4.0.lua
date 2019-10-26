@@ -655,8 +655,9 @@ if( playerClass == "DRUID" ) then
 			end
 		end
 
-		GetHealTargets = function(bitType, guid, healAmount, spellName, hasVariableTicks)
+		GetHealTargets = function(bitType, guid, healAmount, spellID, hasVariableTicks)
 			-- Tranquility pulses on everyone within 30 yards, if they are in range of Innervate they'll get Tranquility
+			local spellName = GetSpellInfo(spellID)
 			if( spellName == Tranquility ) then
 				local targets = compressGUID[playerGUID]
 				local playerGroup = guidToGroup[playerGUID]
@@ -943,7 +944,7 @@ if( playerClass == "PALADIN" ) then
 			hasDivineFavor = unitHasAura("player", DivineFavor)
 		end
 
-		GetHealTargets = function(bitType, guid, healAmount, spellName, hasVariableTicks)
+		GetHealTargets = function(bitType, guid, healAmount, spellID, hasVariableTicks)
 			if( activeBeaconGUID and activeBeaconGUID ~= guid and guidToUnit[activeBeaconGUID] and UnitIsVisible(guidToUnit[activeBeaconGUID]) ) then
 				return format("%s,%s", compressGUID[guid], compressGUID[activeBeaconGUID]), healAmount
 			elseif( hasVariableTicks ) then
@@ -1058,7 +1059,8 @@ if( playerClass == "PRIEST" ) then
 		end
 
 		-- Check for beacon when figuring out who to heal
-		GetHealTargets = function(bitType, guid, healAmount, spellName, hasVariableTicks)
+		GetHealTargets = function(bitType, guid, healAmount, spellID, hasVariableTicks)
+			local spellName = GetSpellInfo(spellID)
 			if( spellName == BindingHeal ) then
 				return format("%s,%s", compressGUID[guid], compressGUID[playerGUID]), healAmount
 			elseif( spellName == PrayerofHealing ) then
@@ -1245,8 +1247,8 @@ if( playerClass == "SHAMAN" ) then
 		end
 
 		-- Lets a specific override on how many people this will hit
-		GetHealTargets = function(bitType, guid, healAmount, spellName, hasVariableTicks)
-			-- Glyph of Healing Wave, heals you for 20% of your heal when you heal someone else
+		GetHealTargets = function(bitType, guid, healAmount, spellID, hasVariableTicks)
+			local spellName = GetSpellInfo(spellID)
 			if( glyphCache[55440] and guid ~= playerGUID and spellName == HealingWave ) then
 				return format("%s,%d,%s,%d", compressGUID[guid], healAmount, compressGUID[playerGUID], healAmount *  0.20), -1
 			elseif( hasVariableTicks ) then
@@ -2084,7 +2086,7 @@ HealComm.bucketFrame:SetScript("OnUpdate", function(self, elapsed)
 					elseif( data.type == "heal" ) then
 						local bitType, amount, totalTicks, tickInterval, _, hasVariableTicks = CalculateHotHealing(data[1], data.spellID)
 						if( bitType ) then
-							local targets, amt = GetHealTargets(bitType, data[1], hasVariableTicks and amount or max(amount, 0), data.spellName, data, hasVariableTicks)
+							local targets, amt = GetHealTargets(bitType, data[1], hasVariableTicks and amount or max(amount, 0), data.spellID, data, hasVariableTicks)
 							parseHotHeal(playerGUID, false, data.spellID, amt, totalTicks, tickInterval, strsplit(",", targets))
 
 							if( not hasVariableTicks ) then
@@ -2181,12 +2183,12 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(timestamp, eventType, sourceGUID, 
 			-- Single target so we can just send it off now thankfully
 			local bitType, amount, totalTicks, tickInterval, bombAmount, hasVariableTicks = CalculateHotHealing(destGUID, spellID)
 			if( bitType ) then
-				local targets, amt = GetHealTargets(type, destGUID, hasVariableTicks and amount or max(amount, 0), spellName, hasVariableTicks)
+				local targets, amt = GetHealTargets(type, destGUID, hasVariableTicks and amount or max(amount, 0), spellID, hasVariableTicks)
 				parseHotHeal(sourceGUID, false, spellID, amt, totalTicks, tickInterval, strsplit(",", targets))
 
 				-- Hot with a bomb!
 				if( bombAmount ) then
-					local bombTargets, bAmount = GetHealTargets(BOMB_HEALS, destGUID, max(bombAmount, 0), spellName)
+					local bombTargets, bAmount = GetHealTargets(BOMB_HEALS, destGUID, max(bombAmount, 0), spellID)
 					parseHotBomb(sourceGUID, false, spellID, bAmount, strsplit(",", bombTargets))
 					sendMessage(format("B:%d:%d:%d:%s:%d::%d:%s", totalTicks, spellID, bAmount, bombTargets, amount, tickInterval, targets))
 				elseif( hasVariableTicks ) then
@@ -2311,6 +2313,8 @@ function HealComm:UNIT_SPELLCAST_START(unit, cast, spellID)
 	local bitType, amount, ticks, localTicks = CalculateHealing(castGUID, spellID)
 	local targets, amt = GetHealTargets(bitType, castGUID, max(amount, 0), spellID)
 
+	if not targets then return end -- only here until I compress/decompress npcs
+
 	if( bitType == DIRECT_HEALS ) then
 		local startTime, endTime = select(4, CastingInfo())
 		parseDirectHeal(playerGUID, spellID, amt, (endTime - startTime) / 1000, strsplit(",", targets))
@@ -2338,7 +2342,10 @@ function HealComm:UNIT_SPELLCAST_SUCCEEDED(unit, cast, spellID)
 
 		local bitType, amount, totalTicks, tickInterval, _, hasVariableTicks = CalculateHotHealing(playerGUID, spellID)
 		if bitType  == HOT_HEALS then
-			targets, amount = GetHealTargets(bitType, castGUID, hasVariableTicks and amount or max(amount, 0), spellName, hasVariableTicks)
+			targets, amount = GetHealTargets(bitType, castGUID, hasVariableTicks and amount or max(amount, 0), spellID, hasVariableTicks)
+
+			if not targets then return end -- only here until I compress/decompress npcs
+
 			parseHotHeal(playerGUID, false, spellID, amount, totalTicks, tickInterval, strsplit(",", targets))
 
 			if( not hasVariableTicks ) then
