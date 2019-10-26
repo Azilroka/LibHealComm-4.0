@@ -1389,10 +1389,10 @@ end
 if( playerClass == "WARLOCK" ) then
 	LoadClassData = function()
 		local HealthFunnel = GetSpellInfo(755)
-		local DrainLife = GetSpellInfo(689)
+		-- local DrainLife = GetSpellInfo(689)
 
 		spellData[HealthFunnel] = { interval = 1, levels = { 12, 20, 28, 36, 44, 52, 60 }, ticks = 10, averages = { 11, 23, 42, 63, 88, 118, 152 } }
-		spellData[DrainLife] = { interval = 1, levels = { 14, 22, 30, 38, 46, 54 }, ticks = 5, averages = { 10, 16, 29, 41, 55, 71 } }
+		-- spellData[DrainLife] = { interval = 1, levels = { 14, 22, 30, 38, 46, 54 }, ticks = 5, averages = { 10, 16, 29, 41, 55, 71 } }
 
 		GetHealTargets = function(bitType, guid, healAmount, spellID)
 			return compressGUID[UnitGUID("pet")], healAmount
