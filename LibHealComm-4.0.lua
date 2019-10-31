@@ -64,7 +64,6 @@ local UnitAura = UnitAura
 local UnitCanAssist = UnitCanAssist
 local UnitExists = UnitExists
 local UnitGUID = UnitGUID
-local UnitHasVehicleUI = UnitHasVehicleUI
 local UnitIsCharmed = UnitIsCharmed
 local UnitIsVisible = UnitIsVisible
 local UnitIsUnit = UnitIsUnit
@@ -450,14 +449,14 @@ local function filterData(spells, filterGUID, bitFlag, time, ignoreGUID)
 						else
 							local secondsLeft = endTime - currentTime
 							local bandSeconds = time - currentTime
-							local ticks = math.floor(math.min(bandSeconds, secondsLeft) / pending.tickInterval)
+							local ticks = floor(min(bandSeconds, secondsLeft) / pending.tickInterval)
 							local nextTickIn = secondsLeft % pending.tickInterval
 							local fractionalBand = bandSeconds % pending.tickInterval
 							if( nextTickIn > 0 and nextTickIn < fractionalBand ) then
 								ticks = ticks + 1
 							end
 
-							healAmount = healAmount + (amount * stack) * math.min(ticks, ticksLeft)
+							healAmount = healAmount + (amount * stack) * min(ticks, ticksLeft)
 						end
 					end
 				end
