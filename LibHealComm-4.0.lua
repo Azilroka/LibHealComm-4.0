@@ -642,7 +642,7 @@ if( playerClass == "DRUID" ) then
 
 				totalTicks = ticks
 
-				spellPower = spellPower * (duration / 15)
+				spellPower = spellPower * .2
 				healAmount = healAmount / ticks
 			elseif( spellName == Regrowth ) then
 				spellPower = spellPower * hotData[spellName].coeff
