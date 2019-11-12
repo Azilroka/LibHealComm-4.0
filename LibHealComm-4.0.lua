@@ -636,11 +636,13 @@ if( playerClass == "DRUID" ) then
 			local spellPower = GetSpellBonusHealing()
 			local healModifier, spModifier = playerHealModifier, 1
 			local totalTicks
-			healModifier = healModifier + talentData[GiftofNature].current
+
+			local baseHealAmount = healAmount
+			healAmount = healAmount + baseHealAmount * talentData[GiftofNature].current
 
 			-- Rejuvenation
 			if( spellName == Rejuvenation ) then
-				healModifier = healModifier + talentData[ImprovedRejuv].current
+				healAmount = healAmount + baseHealAmount * talentData[ImprovedRejuv].current
 
 				if( playerCurrentRelic == 22398 ) then
 					spellPower = spellPower + 50
@@ -680,7 +682,7 @@ if( playerClass == "DRUID" ) then
 			local healModifier, spModifier = playerHealModifier, 1
 
 			-- Gift of Nature
-			healModifier = healModifier + talentData[GiftofNature].current
+			healAmount = healAmount * (1 + talentData[GiftofNature].current)
 
 			-- Regrowth
 			if( spellName == Regrowth ) then
@@ -767,10 +769,10 @@ if( playerClass == "PALADIN" ) then
 			local healModifier, spModifier = playerHealModifier, 1
 			local rank = SpellIDToRank[spellID]
 
-			healModifier = healModifier + talentData[HealingLight].current
+			healAmount = healAmount * (1 + talentData[HealingLight].current)
 
 			if(playerCurrentRelic and spellName == FlashofLight and flashLibrams[playerCurrentRelic] ) then
-				healAmount = healAmount + flashLibrams[playerCurrentRelic]
+				spellPower = spellPower + flashLibrams[playerCurrentRelic]
 			end
 
 			spellPower = spellPower * spellData[spellName].coeff
@@ -847,10 +849,11 @@ if( playerClass == "PRIEST" ) then
 			local healModifier, spModifier = playerHealModifier, 1
 			local totalTicks
 
-			healModifier = healModifier + talentData[SpiritualHealing].current
+			local baseHealAmount = healAmount
+			healAmount = healAmount + baseHealAmount * talentData[SpiritualHealing].current
 
 			if( spellName == Renew or spellName == GreaterHealHot ) then
-				healModifier = healModifier + talentData[ImprovedRenew].current
+				healAmount = healAmount + baseHealAmount * talentData[ImprovedRenew].current
 
 				--if( equippedSetCache["Oracle"] >= 5 ) then ticks = ticks + 1 duration = 18 end
 
@@ -872,7 +875,7 @@ if( playerClass == "PRIEST" ) then
 			local spellPower = GetSpellBonusHealing()
 			local healModifier, spModifier = playerHealModifier, 1
 
-			healModifier = healModifier + talentData[SpiritualHealing].current
+			healAmount = healAmount * (1 + talentData[SpiritualHealing].current)
 
 			-- Greater Heal
 			if( spellName == GreaterHeal ) then
@@ -935,7 +938,7 @@ if( playerClass == "SHAMAN" ) then
 			local spellPower = GetSpellBonusHealing()
 			local healModifier, spModifier = playerHealModifier, 1
 
-			healModifier = healModifier + talentData[Purification].current
+			healAmount = healAmount * (1 + talentData[Purification].current)
 
 			-- Chain Heal
 			if( spellName == ChainHeal ) then
@@ -1299,7 +1302,7 @@ local function parseDirectHeal(casterGUID, spellID, amount, castTime, ...)
 
 	local pending = pendingHeals[casterGUID][spellName]
 	wipe(pending)
-	pending.endTime = endTime / 1000
+	pending.endTime = endTime
 	pending.spellID = spellID
 	pending.bitType = DIRECT_HEALS
 
@@ -1333,8 +1336,8 @@ local function parseChannelHeal(casterGUID, spellID, amount, totalTicks, ...)
 	local inc = amount == -1 and 2 or 1
 	local pending = pendingHots[casterGUID][spellName]
 	wipe(pending)
-	pending.startTime = startTime / 1000
-	pending.endTime = endTime / 1000
+	pending.startTime = startTime
+	pending.endTime = endTime
 	pending.duration = max(pending.duration or 0, pending.endTime - pending.startTime)
 	pending.totalTicks = totalTicks
 	pending.tickInterval = (pending.endTime - pending.startTime) / totalTicks
@@ -1416,10 +1419,15 @@ end
 -- Heal finished
 local function parseHealEnd(casterGUID, pending, checkField, spellID, interrupted, ...)
 	local spellName = GetSpellInfo(spellID)
-	if( not spellName or not (pendingHeals[casterGUID] or pendingHots[casterGUID]) ) then return end
+	if( not spellName or not casterGUID ) then return end
 
 	if( not pending ) then
-		pending = (pendingHots[casterGUID][spellName] or pendingHeals[casterGUID][spellName])
+		if pendingHeals[casterGUID] then
+			pending = pendingHots[casterGUID][spellName]
+		end
+		if (not pending) and pendingHots[casterGUID] then
+			pending = pendingHeals[casterGUID][spellName]
+		end
 	end
 	if( not pending or not pending.bitType ) then return end
 
