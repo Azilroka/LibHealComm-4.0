@@ -1,7 +1,7 @@
 if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
 
 local major = "LibHealComm-4.0"
-local minor = 72
+local minor = 73
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -1423,10 +1423,10 @@ local function parseHealEnd(casterGUID, pending, checkField, spellID, interrupte
 
 	if( not pending ) then
 		if pendingHeals[casterGUID] then
-			pending = pendingHots[casterGUID][spellName]
+			pending = pendingHeals[casterGUID][spellName]
 		end
 		if (not pending) and pendingHots[casterGUID] then
-			pending = pendingHeals[casterGUID][spellName]
+			pending = pendingHots[casterGUID][spellName]
 		end
 	end
 	if( not pending or not pending.bitType ) then return end
