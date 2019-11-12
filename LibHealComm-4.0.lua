@@ -823,12 +823,13 @@ if( playerClass == "PRIEST" ) then
 		GetHealTargets = function(bitType, guid, healAmount, spellID)
 			local spellName = GetSpellInfo(spellID)
 			if( spellName == PrayerofHealing ) then
+				guid = UnitGUID("player")
 				local targets = compressGUID[guid]
 				local group = guidToGroup[guid]
 
 				for groupGUID, id in pairs(guidToGroup) do
 					local unit = guidToUnit[groupGUID]
-					if( id == group and guid ~= groupGUID and UnitIsVisible(unit) ) then
+					if( id == group and guid ~= groupGUID and CheckInteractDistance(unit, 4) ) then
 						targets = targets .. "," .. compressGUID[groupGUID]
 					end
 				end
@@ -1582,8 +1583,21 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(...)
 
 	if( not eventRegistered[eventType] ) then return end
 
-	local _, spellName = select(12, ...)
+	local _, spellName, spellSchool, auraType = select(12, ...)
 	local spellID = select(7, GetSpellInfo(spellName))
+
+-- check for a downranked hot
+	if auraType then
+		for i=1,32 do
+			local name = UnitBuff(guidToUnit[destGUID],i)
+			if name == spellName then
+				spellID = select(10, UnitBuff(guidToUnit[destGUID],i))
+				break
+			elseif not name then
+				break
+			end
+		end
+	end
 
 	-- Heal or hot ticked that the library is tracking
 	-- It's more efficient/accurate to have the library keep track of this locally, spamming the comm channel would not be a very good thing especially when a single player can have 4 - 8 hots/channels going on them.
