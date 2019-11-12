@@ -1587,9 +1587,9 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(...)
 	local spellID = select(7, GetSpellInfo(spellName))
 
 -- check for a downranked hot
-	if auraType then
+	if auraType and guidToUnit[destGUID] then
 		for i=1,32 do
-			local name = guidToUnit[destGUID] and UnitBuff(guidToUnit[destGUID],i)
+			local name = UnitBuff(guidToUnit[destGUID],i)
 			if name == spellName then
 				spellID = select(10, UnitBuff(guidToUnit[destGUID],i))
 				break
