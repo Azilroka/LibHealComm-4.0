@@ -1,7 +1,7 @@
 if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
 
 local major = "LibHealComm-4.0"
-local minor = 73
+local minor = 74
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -519,8 +519,23 @@ local playerCurrentRelic
 local guidToUnit, guidToGroup = HealComm.guidToUnit, HealComm.guidToGroup
 
 -- UnitBuff priortizes our buffs over everyone elses when there is a name conflict, so yay for that
+do
+	local function SpellIdPredicate(spellIdToFind, _, _, _, _, _, _, _, _, _, _, _, spellId)
+		return spellIdToFind == spellId;
+	end
+
+	function AuraUtil.FindAuraBySpellId(spellId, unit, filter)
+		return AuraUtil.FindAura(SpellIdPredicate, unit, filter, spellId);
+	end
+end
+
+ -- UnitBuff priortizes our buffs over everyone elses when there is a name conflict, so yay for that
 local function unitHasAura(unit, name)
-	return select(7, AuraUtil.FindAuraByName(name, unit)) == "player"
+	if type(name) == "number" then
+		return select(7, AuraUtil.FindAuraBySpellId(name, unit)) == "player"
+	else
+		return select(7, AuraUtil.FindAuraByName(name, unit)) == "player"
+	end
 end
 
 -- Note because I always forget on the order:
@@ -637,12 +652,11 @@ if( playerClass == "DRUID" ) then
 			local healModifier, spModifier = playerHealModifier, 1
 			local totalTicks
 
-			local baseHealAmount = healAmount
-			healAmount = healAmount + baseHealAmount * talentData[GiftofNature].current
+			healAmount = healAmount * (1 + talentData[GiftofNature].current)
 
 			-- Rejuvenation
 			if( spellName == Rejuvenation ) then
-				healAmount = healAmount + baseHealAmount * talentData[ImprovedRejuv].current
+				healAmount = healAmount * (1 + talentData[ImprovedRejuv].current)
 
 				if( playerCurrentRelic == 22398 ) then
 					spellPower = spellPower + 50
@@ -849,11 +863,10 @@ if( playerClass == "PRIEST" ) then
 			local healModifier, spModifier = playerHealModifier, 1
 			local totalTicks
 
-			local baseHealAmount = healAmount
-			healAmount = healAmount + baseHealAmount * talentData[SpiritualHealing].current
+			healAmount = healAmount * (1 + talentData[SpiritualHealing].current)
 
 			if( spellName == Renew or spellName == GreaterHealHot ) then
-				healAmount = healAmount + baseHealAmount * talentData[ImprovedRenew].current
+				healAmount = healAmount * (1 + talentData[ImprovedRenew].current)
 
 				--if( equippedSetCache["Oracle"] >= 5 ) then ticks = ticks + 1 duration = 18 end
 
