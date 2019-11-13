@@ -1,7 +1,7 @@
 if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
 
 local major = "LibHealComm-4.0"
-local minor = 74
+local minor = 75
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -532,9 +532,9 @@ end
  -- UnitBuff priortizes our buffs over everyone elses when there is a name conflict, so yay for that
 local function unitHasAura(unit, name)
 	if type(name) == "number" then
-		return select(7, AuraUtil.FindAuraBySpellId(name, unit)) == "player"
+		return select(7, AuraUtil.FindAuraBySpellId(name, unit))
 	else
-		return select(7, AuraUtil.FindAuraByName(name, unit)) == "player"
+		return select(7, AuraUtil.FindAuraByName(name, unit))
 	end
 end
 
@@ -955,13 +955,13 @@ if( playerClass == "SHAMAN" ) then
 
 			-- Chain Heal
 			if( spellName == ChainHeal ) then
-				healModifier = healModifier * (1 + talentData[ImpChainHeal].current)
+				healAmount = healAmount * (1 + talentData[ImpChainHeal].current)
 				spellPower = spellPower * spellData[spellName].coeff
 			-- Heaing Wave
 			elseif( spellName == HealingWave ) then
-				local hwStacks = unitHasAura(unit, 29203)
+				local hwStacks = select(3, unitHasAura(unit, 29203))
 				if( hwStacks ) then
-					healModifier = healModifier * ((hwStacks * 0.06) + 1)
+					healAmount = healAmount * ((hwStacks * 0.06) + 1)
 				end
 				--healModifier = healModifier * (talentData[HealingWay].spent == 3 and 1.25 or talentData[HealingWay].spent == 2 and 1.16 or talentData[HealingWay].spent == 1 and 1.08 or 1)
 
