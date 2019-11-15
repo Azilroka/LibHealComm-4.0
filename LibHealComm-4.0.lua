@@ -874,7 +874,7 @@ if( playerClass == "PRIEST" ) then
 			45, 100, 175, 245, 315, 400, 510, 650, 810, 970 }}
 		hotData[GreaterHealHot] = hotData[Renew]
 
-		spellData[FlashHeal] = {coeff = 1.5 / 3.5, levels = {20, 26, 32, 38, 44, 52, 58}, averages = {
+		spellData[FlashHeal] = {coeff = 1.5 / 3.5, levels = {20, 26, 32, 38, 44, 50, 56}, averages = {
 			{avg(193, 237), avg(194, 239), avg(196, 241), avg(198, 243),  avg(200, 245), avg(202, 247)},
 			{avg(258, 314), avg(260, 317), avg(262, 319), avg(264, 321), avg(266, 323), avg(269, 325)},
 			{avg(327, 393), avg(329, 396), avg(332, 398), avg(334, 401), avg(337, 403), avg(339, 406)},
