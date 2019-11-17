@@ -1,7 +1,7 @@
 if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
 
 local major = "LibHealComm-4.0"
-local minor = 78
+local minor = 79
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -136,8 +136,6 @@ local activeHots, activePets = HealComm.activeHots, HealComm.activePets
 
 -- Figure out what they are now since a few things change based off of this
 local playerClass = select(2, UnitClass("player"))
-
-local isHealerClass = playerClass == "DRUID" or playerClass == "PRIEST" or playerClass == "SHAMAN" or playerClass == "PALADIN" or playerClass == "HUNTER" or playerClass == "WARLOCK"
 
 if( not HealComm.compressGUID  ) then
 	HealComm.compressGUID = setmetatable({}, {
@@ -1166,17 +1164,18 @@ local healingStackMods = HealComm.healingStackMods
 local healingModifiers, currentModifiers = HealComm.healingModifiers, HealComm.currentModifiers
 
 local distribution
-local CTL = ChatThrottleLib
+local CTL = _G.ChatThrottleLib
 local function sendMessage(msg)
 	if( distribution and strlen(msg) <= 240 ) then
-		CTL:SendAddonMessage("BULK", COMM_PREFIX, msg, distribution or 'GUILD')
+		if CTL then
+			CTL:SendAddonMessage("BULK", COMM_PREFIX, msg, distribution or 'GUILD')
+		end
 	end
 end
 
 -- Keep track of where all the data should be going
 local instanceType
 local function updateDistributionChannel()
-	local lastChannel = distribution
 	if( instanceType == "pvp" ) then
 		distribution = "BATTLEGROUND"
 	elseif( IsInRaid() ) then
@@ -1185,27 +1184,6 @@ local function updateDistributionChannel()
 		distribution = "PARTY"
 	else
 		distribution = nil
-	end
-
-	if( distribution == lastChannel ) then return end
-
-	-- If the player is not a healer, some events can be disabled until the players grouped.
-	if( distribution ) then
-		HealComm.eventFrame:RegisterEvent("CHAT_MSG_ADDON")
-		if( not isHealerClass ) then
-			HealComm.eventFrame:RegisterEvent("UNIT_AURA")
-			HealComm.eventFrame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
-			HealComm.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
-			HealComm.eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-		end
-	else
-		HealComm.eventFrame:UnregisterEvent("CHAT_MSG_ADDON")
-		if( not isHealerClass ) then
-			HealComm.eventFrame:UnregisterEvent("UNIT_AURA")
-			HealComm.eventFrame:UnregisterEvent("UNIT_SPELLCAST_DELAYED")
-			HealComm.eventFrame:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
-			HealComm.eventFrame:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-		end
 	end
 end
 
@@ -1602,7 +1580,7 @@ function HealComm:CHAT_MSG_ADDON(prefix, message, channel, sender)
 	local casterGUID = UnitGUID(Ambiguate(sender, "none"))
 	spellID = tonumber(spellID)
 
-	if( not commType or not spellID or not casterGUID ) then return end
+	if( not commType or not spellID or not casterGUID or casterGUID == playerGUID) then return end
 
 	-- New direct heal - D:<extra>:<spellID>:<amount>:target1,target2...
 	if( commType == "D" and arg1 and arg2 ) then
@@ -1681,14 +1659,15 @@ HealComm.bucketFrame:SetScript("OnUpdate", function(self, elapsed)
 end)
 
 -- Monitor aura changes as well as new hots being cast
-local eventRegistered = {["SPELL_HEAL"] = true, ["SPELL_PERIODIC_HEAL"] = true}
-if( isHealerClass ) then
-	eventRegistered["SPELL_AURA_REMOVED"] = true
-	eventRegistered["SPELL_AURA_APPLIED"] = true
-	eventRegistered["SPELL_AURA_REFRESH"] = true
-	eventRegistered["SPELL_AURA_APPLIED_DOSE"] = true
-	eventRegistered["SPELL_AURA_REMOVED_DOSE"] = true
-end
+local eventRegistered = {
+	SPELL_HEAL = true,
+	SPELL_PERIODIC_HEAL = true,
+	SPELL_AURA_REMOVED = true,
+	SPELL_AURA_APPLIED = true,
+	SPELL_AURA_REFRESH = true,
+	SPELL_AURA_APPLIED_DOSE = true,
+	SPELL_AURA_REMOVED_DOSE = true,
+}
 
 function HealComm:COMBAT_LOG_EVENT_UNFILTERED(...)
 	local timestamp, eventType, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags = ...
@@ -2136,6 +2115,7 @@ function HealComm:GROUP_ROSTER_UPDATE()
 	local isInRaid = IsInRaid()
 	local unitType = isInRaid and "raid%d" or "party%d"
 	if not isInRaid then
+		guidToUnit[playerGUID or UnitGUID("player")] = "player"
 		guidToGroup[playerGUID or UnitGUID("player")] = 1 -- Player doesn't belong to 'party%d' unit.
 	end
 	-- Add new members
@@ -2173,7 +2153,9 @@ function HealComm:OnInitialize()
 	wipe(talentData)
 
 	-- Load all of the classes formulas and such
-	LoadClassData()
+	if LoadClassData then
+		LoadClassData()
+	end
 
 	do
 		local FirstAid = GetSpellInfo(746)
@@ -2193,7 +2175,9 @@ function HealComm:OnInitialize()
 				return CHANNEL_HEALS, ceil(healAmount / ticks), ticks, spellData[spellName].interval
 			end
 
-			return _CalculateHealing(guid, spellID, unit)
+			if _CalculateHealing then
+				return _CalculateHealing(guid, spellID, unit)
+			end
 		end
 	end
 
@@ -2212,6 +2196,7 @@ function HealComm:OnInitialize()
 	end
 
 	-- Finally, register it all
+	self.eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_SENT")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
@@ -2274,9 +2259,7 @@ function HealComm:PLAYER_LOGIN()
 	-- Oddly enough player GUID is not available on file load, so keep the map of player GUID to themselves too
 	guidToUnit[playerGUID] = "player"
 
-	if( isHealerClass ) then
-		self:OnInitialize()
-	end
+	self:OnInitialize()
 
 	self.eventFrame:UnregisterEvent("PLAYER_LOGIN")
 	self.eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
