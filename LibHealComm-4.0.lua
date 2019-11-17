@@ -1156,8 +1156,8 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 
 HealComm.healingStackMods = HealComm.healingStackMods or {
 	-- Mortal Wound
-	[25646] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end,
-	[28467] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end,
+	[25646] = function(stacks) return 1 - stacks * 0.10 end,
+	[28467] = function(stacks) return 1 - stacks * 0.10 end,
 }
 
 local healingStackMods = HealComm.healingStackMods
@@ -1222,7 +1222,7 @@ function HealComm:UNIT_AURA(unit)
 	-- Scan buffs
 	local id = 1
 	while( true ) do
-		local name, rank, icon, stack, _, _, _, _, _, _, spellID = UnitAura(unit, id, "HELPFUL")
+		local name, _, _, stack, _, _, _, _, _, _, spellID = UnitAura(unit, id, "HELPFUL")
 		if( not name ) then break end
 		-- Prevent buffs like Tree of Life that have the same name for the shapeshift/healing increase from being calculated twice
 		if( not alreadyAdded[name] ) then
@@ -1230,10 +1230,8 @@ function HealComm:UNIT_AURA(unit)
 
 			if( healingModifiers[spellID] ) then
 				increase = increase * healingModifiers[spellID]
-			elseif( healingModifiers[name] ) then
-				increase = increase * healingModifiers[name]
 			elseif( healingStackMods[spellID] ) then
-				increase = increase * healingStackMods[name](name, rank, icon, stack)
+				increase = increase * healingStackMods[spellID](stack)
 			end
 		end
 
@@ -1243,15 +1241,13 @@ function HealComm:UNIT_AURA(unit)
 	-- Scan debuffs
 	id = 1
 	while( true ) do
-		local name, rank, icon, stack, _, _, _, _, _, _, spellID = UnitAura(unit, id, "HARMFUL")
+		local name, _, _, stack, _, _, _, _, _, _, spellID = UnitAura(unit, id, "HARMFUL")
 		if( not name ) then break end
 
 		if( healingModifiers[spellID] ) then
 			decrease = min(decrease, healingModifiers[spellID])
-		elseif( healingModifiers[name] ) then
-			decrease = min(decrease, healingModifiers[name])
-		elseif( healingStackMods[name] ) then
-			decrease = min(decrease, healingStackMods[name](name, rank, icon, stack))
+		elseif( healingStackMods[spellID] ) then
+			decrease = min(decrease, healingStackMods[spellID](stack))
 		end
 
 		id = id + 1
