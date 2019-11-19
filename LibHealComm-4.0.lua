@@ -1,7 +1,7 @@
 if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
 
 local major = "LibHealComm-4.0"
-local minor = 78
+local minor = 80
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -136,8 +136,6 @@ local activeHots, activePets = HealComm.activeHots, HealComm.activePets
 
 -- Figure out what they are now since a few things change based off of this
 local playerClass = select(2, UnitClass("player"))
-
-local isHealerClass = playerClass == "DRUID" or playerClass == "PRIEST" or playerClass == "SHAMAN" or playerClass == "PALADIN" or playerClass == "HUNTER" or playerClass == "WARLOCK"
 
 if( not HealComm.compressGUID  ) then
 	HealComm.compressGUID = setmetatable({}, {
@@ -622,7 +620,7 @@ if( playerClass == "DRUID" ) then
 		local Rejuvenation = GetSpellInfo(774)
 		local Tranquility = GetSpellInfo(740)
 
-		hotData[Regrowth] = { interval = 3, ticks = 7, coeff = 0.325, levels = { 12, 18, 24, 30, 36, 42, 48, 54, 60 }, averages = { 98, 175, 259, 343, 427, 546, 686, 861, 1064 }}
+		hotData[Regrowth] = { interval = 3, ticks = 7, coeff = 0.5, levels = { 12, 18, 24, 30, 36, 42, 48, 54, 60 }, averages = { 98, 175, 259, 343, 427, 546, 686, 861, 1064 }}
 		hotData[Rejuvenation] = { interval = 3, levels = { 4, 10, 16, 22, 28, 34, 40, 46, 52, 58, 60 }, averages = { 32, 56, 116, 180, 244, 304, 388, 488, 608, 756, 888 }}
 
 		spellData[HealingTouch] = { levels = {1, 8, 14, 20, 26, 32, 38, 44, 50, 56, 60}, averages = {
@@ -637,7 +635,7 @@ if( playerClass == "DRUID" ) then
 			{avg(1516, 1796), avg(1521, 1802), avg(1527, 1808), avg(1533, 1814), avg(1539, 1820), avg(1545, 1826)},
 			{avg(1890, 2230), avg(1896, 2237), avg(1903, 2244), avg(1909, 2250), avg(1916, 2257)},
 			{avg(2267, 2677)} }}
-		spellData[Regrowth] = {coeff = 0.513, levels = hotData[Regrowth].levels, averages = {
+		spellData[Regrowth] = {coeff = 0.5 * (2 / 3.5) , levels = hotData[Regrowth].levels, averages = {
 			{avg(84, 98), avg(85, 100), avg(87, 102), avg(89, 104), avg(91, 106), avg(93, 107)},
 			{avg(164, 188), avg(166, 191), avg(169, 193), avg(171, 196), avg(174, 198), avg(176, 201)},
 			{avg(240, 274), avg(243, 278), avg(246, 281), avg(249, 284), avg(252, 287), avg(255, 290)},
@@ -1159,25 +1157,26 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 
 HealComm.healingStackMods = HealComm.healingStackMods or {
 	-- Mortal Wound
-	[25646] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end,
-	[28467] = function(name, rank, icon, stacks) return 1 - stacks * 0.10 end,
+	[25646] = function(stacks) return 1 - stacks * 0.10 end,
+	[28467] = function(stacks) return 1 - stacks * 0.10 end,
 }
 
 local healingStackMods = HealComm.healingStackMods
 local healingModifiers, currentModifiers = HealComm.healingModifiers, HealComm.currentModifiers
 
 local distribution
-local CTL = ChatThrottleLib
+local CTL = _G.ChatThrottleLib
 local function sendMessage(msg)
 	if( distribution and strlen(msg) <= 240 ) then
-		CTL:SendAddonMessage("BULK", COMM_PREFIX, msg, distribution or 'GUILD')
+		if CTL then
+			CTL:SendAddonMessage("BULK", COMM_PREFIX, msg, distribution or 'GUILD')
+		end
 	end
 end
 
 -- Keep track of where all the data should be going
 local instanceType
 local function updateDistributionChannel()
-	local lastChannel = distribution
 	if( instanceType == "pvp" ) then
 		distribution = "BATTLEGROUND"
 	elseif( IsInRaid() ) then
@@ -1186,27 +1185,6 @@ local function updateDistributionChannel()
 		distribution = "PARTY"
 	else
 		distribution = nil
-	end
-
-	if( distribution == lastChannel ) then return end
-
-	-- If the player is not a healer, some events can be disabled until the players grouped.
-	if( distribution ) then
-		HealComm.eventFrame:RegisterEvent("CHAT_MSG_ADDON")
-		if( not isHealerClass ) then
-			HealComm.eventFrame:RegisterEvent("UNIT_AURA")
-			HealComm.eventFrame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
-			HealComm.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
-			HealComm.eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-		end
-	else
-		HealComm.eventFrame:UnregisterEvent("CHAT_MSG_ADDON")
-		if( not isHealerClass ) then
-			HealComm.eventFrame:UnregisterEvent("UNIT_AURA")
-			HealComm.eventFrame:UnregisterEvent("UNIT_SPELLCAST_DELAYED")
-			HealComm.eventFrame:UnregisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
-			HealComm.eventFrame:UnregisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-		end
 	end
 end
 
@@ -1245,7 +1223,7 @@ function HealComm:UNIT_AURA(unit)
 	-- Scan buffs
 	local id = 1
 	while( true ) do
-		local name, rank, icon, stack, _, _, _, _, _, _, spellID = UnitAura(unit, id, "HELPFUL")
+		local name, _, _, stack, _, _, _, _, _, _, spellID = UnitAura(unit, id, "HELPFUL")
 		if( not name ) then break end
 		-- Prevent buffs like Tree of Life that have the same name for the shapeshift/healing increase from being calculated twice
 		if( not alreadyAdded[name] ) then
@@ -1253,10 +1231,8 @@ function HealComm:UNIT_AURA(unit)
 
 			if( healingModifiers[spellID] ) then
 				increase = increase * healingModifiers[spellID]
-			elseif( healingModifiers[name] ) then
-				increase = increase * healingModifiers[name]
 			elseif( healingStackMods[spellID] ) then
-				increase = increase * healingStackMods[name](name, rank, icon, stack)
+				increase = increase * healingStackMods[spellID](stack)
 			end
 		end
 
@@ -1266,15 +1242,13 @@ function HealComm:UNIT_AURA(unit)
 	-- Scan debuffs
 	id = 1
 	while( true ) do
-		local name, rank, icon, stack, _, _, _, _, _, _, spellID = UnitAura(unit, id, "HARMFUL")
+		local name, _, _, stack, _, _, _, _, _, _, spellID = UnitAura(unit, id, "HARMFUL")
 		if( not name ) then break end
 
 		if( healingModifiers[spellID] ) then
 			decrease = min(decrease, healingModifiers[spellID])
-		elseif( healingModifiers[name] ) then
-			decrease = min(decrease, healingModifiers[name])
-		elseif( healingStackMods[name] ) then
-			decrease = min(decrease, healingStackMods[name](name, rank, icon, stack))
+		elseif( healingStackMods[spellID] ) then
+			decrease = min(decrease, healingStackMods[spellID](stack))
 		end
 
 		id = id + 1
@@ -1603,7 +1577,7 @@ function HealComm:CHAT_MSG_ADDON(prefix, message, channel, sender)
 	local casterGUID = UnitGUID(Ambiguate(sender, "none"))
 	spellID = tonumber(spellID)
 
-	if( not commType or not spellID or not casterGUID ) then return end
+	if( not commType or not spellID or not casterGUID or casterGUID == playerGUID) then return end
 
 	-- New direct heal - D:<extra>:<spellID>:<amount>:target1,target2...
 	if( commType == "D" and arg1 and arg2 ) then
@@ -1682,14 +1656,15 @@ HealComm.bucketFrame:SetScript("OnUpdate", function(self, elapsed)
 end)
 
 -- Monitor aura changes as well as new hots being cast
-local eventRegistered = {["SPELL_HEAL"] = true, ["SPELL_PERIODIC_HEAL"] = true}
-if( isHealerClass ) then
-	eventRegistered["SPELL_AURA_REMOVED"] = true
-	eventRegistered["SPELL_AURA_APPLIED"] = true
-	eventRegistered["SPELL_AURA_REFRESH"] = true
-	eventRegistered["SPELL_AURA_APPLIED_DOSE"] = true
-	eventRegistered["SPELL_AURA_REMOVED_DOSE"] = true
-end
+local eventRegistered = {
+	SPELL_HEAL = true,
+	SPELL_PERIODIC_HEAL = true,
+	SPELL_AURA_REMOVED = true,
+	SPELL_AURA_APPLIED = true,
+	SPELL_AURA_REFRESH = true,
+	SPELL_AURA_APPLIED_DOSE = true,
+	SPELL_AURA_REMOVED_DOSE = true,
+}
 
 function HealComm:COMBAT_LOG_EVENT_UNFILTERED(...)
 	local timestamp, eventType, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags = ...
@@ -2150,6 +2125,7 @@ function HealComm:GROUP_ROSTER_UPDATE()
 	local isInRaid = IsInRaid()
 	local unitType = isInRaid and "raid%d" or "party%d"
 	if not isInRaid then
+		guidToUnit[playerGUID or UnitGUID("player")] = "player"
 		guidToGroup[playerGUID or UnitGUID("player")] = 1 -- Player doesn't belong to 'party%d' unit.
 	end
 	-- Add new members
@@ -2187,7 +2163,9 @@ function HealComm:OnInitialize()
 	wipe(talentData)
 
 	-- Load all of the classes formulas and such
-	LoadClassData()
+	if LoadClassData then
+		LoadClassData()
+	end
 
 	do
 		local FirstAid = GetSpellInfo(746)
@@ -2207,7 +2185,9 @@ function HealComm:OnInitialize()
 				return CHANNEL_HEALS, ceil(healAmount / ticks), ticks, spellData[spellName].interval
 			end
 
-			return _CalculateHealing(guid, spellID, unit)
+			if _CalculateHealing then
+				return _CalculateHealing(guid, spellID, unit)
+			end
 		end
 	end
 
@@ -2226,6 +2206,7 @@ function HealComm:OnInitialize()
 	end
 
 	-- Finally, register it all
+	self.eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_SENT")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
@@ -2288,9 +2269,7 @@ function HealComm:PLAYER_LOGIN()
 	-- Oddly enough player GUID is not available on file load, so keep the map of player GUID to themselves too
 	guidToUnit[playerGUID] = "player"
 
-	if( isHealerClass ) then
-		self:OnInitialize()
-	end
+	self:OnInitialize()
 
 	self.eventFrame:UnregisterEvent("PLAYER_LOGIN")
 	self.eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
