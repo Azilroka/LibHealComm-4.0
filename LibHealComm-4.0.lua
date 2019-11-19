@@ -70,6 +70,7 @@ local UnitIsUnit = UnitIsUnit
 local UnitLevel = UnitLevel
 local UnitName = UnitName
 local UnitPlayerControlled = UnitPlayerControlled
+local CheckInteractDistance = CheckInteractDistance
 
 local COMBATLOG_OBJECT_AFFILIATION_MINE = COMBATLOG_OBJECT_AFFILIATION_MINE
 
@@ -867,6 +868,7 @@ if( playerClass == "PRIEST" ) then
 		local SpiritualHealing = GetSpellInfo(14898)
 		local ImprovedRenew = GetSpellInfo(14908)
 		local GreaterHealHot = GetSpellInfo(22009)
+		local CureDisease = GetSpellInfo(528)
 
 		hotData[Renew] = {coeff = 1, interval = 3, ticks = 5, levels = {8, 14, 20, 26, 32, 38, 44, 50, 56, 60}, averages = {
 			45, 100, 175, 245, 315, 400, 510, 650, 810, 970 }}
@@ -917,7 +919,7 @@ if( playerClass == "PRIEST" ) then
 
 				for groupGUID, id in pairs(guidToGroup) do
 					local unit = guidToUnit[groupGUID]
-					if( id == group and guid ~= groupGUID and CheckInteractDistance(unit, 4) ) then
+					if( id == group and guid ~= groupGUID and (IsSpellInRange(CureDisease, unit) or CheckInteractDistance(unit, 4)) ) then
 						targets = targets .. "," .. compressGUID[groupGUID]
 					end
 				end
