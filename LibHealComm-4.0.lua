@@ -1829,22 +1829,6 @@ function HealComm:UNIT_SPELLCAST_SUCCEEDED(unit, cast, spellID)
 		parseHealEnd(playerGUID, nil, "name", spellID, false)
 		sendMessage(format("S::%d:0", spellID or 0))
 	end
-	if hotData[spellName] then
-		local castGUID, targets = castGUIDs[spellID]
-		if( not castGUID) then
-			return
-		end
-
-		local bitType, amount, totalTicks, tickInterval, _ = CalculateHotHealing(playerGUID, spellID)
-		if bitType  == HOT_HEALS then
-			targets, amount = GetHealTargets(bitType, castGUID, max(amount, 0), spellID)
-
-			if not targets then return end -- only here until I compress/decompress npcs
-
-			parseHotHeal(playerGUID, false, spellID, amount, totalTicks, tickInterval, strsplit(",", targets))
-			sendMessage(format("H:%d:%d:%d::%d:%s", totalTicks, spellID, amount, tickInterval, targets))
-		end
-	end
 end
 
 function HealComm:UNIT_SPELLCAST_STOP(unit, castGUID, spellID)
