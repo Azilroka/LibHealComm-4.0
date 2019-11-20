@@ -2159,6 +2159,20 @@ function HealComm:OnInitialize()
 		spellData[FirstAid] = { ticks = {6, 6, 7, 7, 8, 8, 8, 8, 8, 8, 8, 10}, interval = 1, averages = {
 			66, 114, 161, 301, 400, 640, 800, 1104, 1360, 2000} }
 
+		local _GetHealTargets = GetHealTargets
+
+		GetHealTargets = function(bitType, guid, healAmount, spellID, data)
+			local spellName = GetSpellInfo(spellID)
+
+			if spellName == FirstAid then
+				return compressGUID[guid], healAmount
+			end
+
+			if _GetHealTargets then
+				return _GetHealTargets(bitType, guid, healAmount, spellID, data)
+			end
+		end
+
 		local _CalculateHealing = CalculateHealing
 
 		CalculateHealing = function(guid, spellID, unit)
