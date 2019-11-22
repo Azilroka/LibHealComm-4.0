@@ -10,8 +10,6 @@ if( not HealComm ) then return end
 local COMM_PREFIX = "LHC40"
 C_ChatInfo.RegisterAddonMessagePrefix(COMM_PREFIX)
 
-local LCD = LibStub('LibClassicDurations', true)
-
 local bit = bit
 local ceil = ceil
 local error = error
@@ -73,6 +71,12 @@ local UnitPlayerControlled = UnitPlayerControlled
 local CheckInteractDistance = CheckInteractDistance
 
 local COMBATLOG_OBJECT_AFFILIATION_MINE = COMBATLOG_OBJECT_AFFILIATION_MINE
+
+local LibClassicDurations = LibStub("LibClassicDurations", true)
+if LibClassicDurations then
+    LibClassicDurations:Register(major)
+    UnitAura = LibClassicDurations.UnitAuraWrapper
+end
 
 local spellRankTableData = {
 	[1] = { 774, 8936, 5185, 740, 635, 19750, 139, 2060, 596, 2061, 2054, 2050, 1064, 331, 8004, 136, 755, 689, 746 },
@@ -1445,13 +1449,6 @@ local function findAura(casterGUID, spellID, ...)
 				local name, _, stack, _, duration, endTime, caster, _, _, spell = UnitAura(unit, id, 'HELPFUL')
 				if( not spell ) then break end
 
-				if LCD and spellID and not UnitIsUnit('player', unit) then
-					local durationNew, expirationTimeNew = LCD:GetAuraDurationByUnit(unit, spellID, caster, name)
-					if durationNew and durationNew > 0 then
-						duration, endTime = durationNew, expirationTimeNew
-					end
-				end
-
 				if( spell == spellID and caster and UnitGUID(caster) == casterGUID ) then
 					return (stack and stack > 0 and stack or 1), duration or 0, endTime or 0
 				end
@@ -1471,7 +1468,7 @@ local function parseHotHeal(casterGUID, wasUpdated, spellID, tickAmount, totalTi
 	local inc = ( tickAmount == -1 or tickAmount == "-1" ) and 2 or 1
 	local stack, duration, endTime = findAura(casterGUID, spellID, ...)
 
-	if( not stack or not duration or not endTime ) then return end
+	if( not stack or not duration or not endTime or stack == 0 or duration == 0 or endTime == 0 ) then return end
 
 	pendingHots[casterGUID] = pendingHots[casterGUID] or {}
 	pendingHots[casterGUID][spellName] = pendingHots[casterGUID][spellName] or {}
@@ -1847,22 +1844,6 @@ function HealComm:UNIT_SPELLCAST_SUCCEEDED(unit, cast, spellID)
 	if spellData[spellName] and not spellData[spellName]._isChanneled then
 		parseHealEnd(playerGUID, nil, "name", spellID, false)
 		sendMessage(format("S::%d:0", spellID or 0))
-	end
-	if hotData[spellName] then
-		local castGUID, targets = castGUIDs[spellID]
-		if( not castGUID) then
-			return
-		end
-
-		local bitType, amount, totalTicks, tickInterval, _ = CalculateHotHealing(playerGUID, spellID)
-		if bitType  == HOT_HEALS then
-			targets, amount = GetHealTargets(bitType, castGUID, max(amount, 0), spellID)
-
-			if not targets then return end -- only here until I compress/decompress npcs
-
-			parseHotHeal(playerGUID, false, spellID, amount, totalTicks, tickInterval, strsplit(",", targets))
-			sendMessage(format("H:%d:%d:%d::%d:%s", totalTicks, spellID, amount, tickInterval, targets))
-		end
 	end
 end
 
