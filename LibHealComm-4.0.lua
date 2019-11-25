@@ -1587,11 +1587,12 @@ function HealComm:CHAT_MSG_ADDON(prefix, message, channel, sender)
 	elseif( commType == "S" or commType == "HS" ) then
 		local interrupted = arg1 == "1" and true or false
 		local checkType = commType == "HS" and "id" or "name"
+		local pending = commType == "HS" and pendingHots[casterGUID] and pendingHots[casterGUID][GetSpellInfo(spellID)]
 
 		if( arg2 and arg2 ~= "" ) then
-			parseHealEnd(casterGUID, nil, checkType, spellID, interrupted, strsplit(",", arg2))
+			parseHealEnd(casterGUID, pending, checkType, spellID, interrupted, strsplit(",", arg2))
 		else
-			parseHealEnd(casterGUID, nil, checkType, spellID, interrupted)
+			parseHealEnd(casterGUID, pending, checkType, spellID, interrupted)
 		end
 	end
 end
@@ -1743,11 +1744,12 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(...)
 	elseif( eventType == "SPELL_AURA_REMOVED" and bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) == COMBATLOG_OBJECT_AFFILIATION_MINE ) then
 		if compressGUID[destGUID] then
 			-- Hot faded that we cast
+			local pending = pendingHots[playerGUID] and pendingHots[playerGUID][spellName]
 			if hotData[spellName] then
-				parseHealEnd(sourceGUID, nil, "id", spellID, false, compressGUID[destGUID])
+				parseHealEnd(sourceGUID, pending, "id", spellID, false, compressGUID[destGUID])
 				sendMessage(format("HS::%d::%s", spellID, compressGUID[destGUID]))
 			elseif spellData[spellName] and spellData[spellName]._isChanneled then
-				parseHealEnd(sourceGUID, nil, "id", spellID, false, compressGUID[destGUID])
+				parseHealEnd(sourceGUID, pending, "id", spellID, false, compressGUID[destGUID])
 				sendMessage(format("S::%d:0:%s", spellID, compressGUID[destGUID]))
 			end
 		end
