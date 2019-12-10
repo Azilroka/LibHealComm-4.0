@@ -64,7 +64,7 @@ local UnitExists = UnitExists
 local UnitGUID = UnitGUID
 local UnitIsCharmed = UnitIsCharmed
 local UnitIsVisible = UnitIsVisible
-local UnitIsUnit = UnitIsUnit
+local UnitInRaid = UnitInRaid
 local UnitLevel = UnitLevel
 local UnitName = UnitName
 local UnitPlayerControlled = UnitPlayerControlled
@@ -142,7 +142,7 @@ if( not HealComm.compressGUID  ) then
 			local str
 			if strsub(guid,1,6) ~= "Player" then
 				for unit,pguid in pairs(activePets) do
-					if pguid == guid then
+					if pguid == guid and UnitExists(unit) then
 						str = "p-" .. strmatch(UnitGUID(unit), "^%w*-([-%w]*)$")
 					end
 				end
@@ -162,7 +162,11 @@ if( not HealComm.compressGUID  ) then
 			if( not str ) then return nil end
 			local guid
 			if strsub(str,1,2) == "p-" then
-				guid = activePets[HealComm.guidToUnit["Player-"..strsub(str,3)]]
+				local unit = HealComm.guidToUnit["Player-"..strsub(str,3)]
+				if not unit then
+					return nil
+				end
+				guid = activePets[unit]
 			else
 				guid = "Player-"..str
 			end
@@ -265,17 +269,19 @@ local function removeRecordList(pending, inc, comp, ...)
 		local guid = select(i, ...)
 		guid = comp and decompressGUID[guid] or guid
 
-		local id = pending[guid]
-		-- ticksLeft, endTime, stack, amount, guid
-		tremove(pending, id + 4)
-		tremove(pending, id + 3)
-		tremove(pending, id + 2)
-		local amount = tremove(pending, id + 1)
-		tremove(pending, id)
-		pending[guid] = nil
+		if guid then
+			local id = pending[guid]
+			-- ticksLeft, endTime, stack, amount, guid
+			tremove(pending, id + 4)
+			tremove(pending, id + 3)
+			tremove(pending, id + 2)
+			local amount = tremove(pending, id + 1)
+			tremove(pending, id)
+			pending[guid] = nil
 
-		-- Release the table
-		if( type(amount) == "table" ) then HealComm:DeleteTable(amount) end
+			-- Release the table
+			if( type(amount) == "table" ) then HealComm:DeleteTable(amount) end
+		end
 	end
 
 	-- Redo all the id maps
@@ -1514,8 +1520,10 @@ local function parseHealEnd(casterGUID, pending, checkField, spellID, interrupte
 		for i=1, select("#", ...) do
 			local guid = decompressGUID[select(i, ...)]
 
-			tinsert(tempPlayerList, guid)
-			removeRecord(pending, guid)
+			if guid then
+				tinsert(tempPlayerList, guid)
+				removeRecord(pending, guid)
+			end
 		end
 	end
 
@@ -1999,7 +2007,7 @@ HealComm.UseAction = HealComm.CastSpell
 local function sanityCheckMapping()
 	for guid, unit in pairs(guidToUnit) do
 		-- Unit no longer exists, remove all healing for them
-		if( not UnitExists(unit) ) then
+		if guid ~= UnitGUID(unit) then
 			-- Check for (and remove) any active heals
 			for _, tbl in pairs({ pendingHeals, pendingHots }) do
 				if tbl[guid] then
@@ -2081,12 +2089,17 @@ end
 
 -- Keeps track of pet GUIDs, as pets are considered vehicles this will also map vehicle GUIDs to unit
 function HealComm:UNIT_PET(unit)
+	local guid = UnitGUID(unit)
+	unit = guidToUnit[guid]
+
+	if not unit then return end
+
 	local pet = self.unitToPet[unit]
-	local guid = pet and UnitGUID(pet)
+	local petGUID = pet and UnitGUID(pet)
 
 	-- We have an active pet guid from this user and it's different, kill it
 	local activeGUID = activePets[unit]
-	if( activeGUID and activeGUID ~= guid ) then
+	if activeGUID and activeGUID ~= petGUID then
 		removeAllRecords(activeGUID)
 
 		guidToUnit[activeGUID] = nil
@@ -2095,10 +2108,10 @@ function HealComm:UNIT_PET(unit)
 	end
 
 	-- Add the new record
-	if( guid ) then
-		guidToUnit[guid] = pet
-		guidToGroup[guid] = guidToGroup[UnitGUID(unit)]
-		activePets[unit] = guid
+	if petGUID then
+		guidToUnit[petGUID] = pet
+		guidToGroup[petGUID] = guidToGroup[guid]
+		activePets[unit] = petGUID
 	end
 end
 
@@ -2106,31 +2119,42 @@ end
 function HealComm:GROUP_ROSTER_UPDATE()
 	updateDistributionChannel()
 
-	-- Left raid, clear any cache we had
-	if( GetNumGroupMembers() == 0 ) then
-		clearGUIDData()
-		return
-	end
+	wipe(activePets)
 
-	local isInRaid = IsInRaid()
-	local unitType = isInRaid and "raid%d" or "party%d"
-	if not isInRaid then
-		guidToUnit[playerGUID or UnitGUID("player")] = "player"
-		guidToGroup[playerGUID or UnitGUID("player")] = 1 -- Player doesn't belong to 'party%d' unit.
-	end
-	-- Add new members
-	for i = 1, GetNumGroupMembers() do
-		local unit = format(unitType, i)
-		if( UnitExists(unit) ) then
-			local guid = UnitGUID(unit)
-			local lastGroup = guidToGroup[guid]
+	local function update(unit)
+		local guid = UnitGUID(unit)
+
+		if guid then
+			local raidID = UnitInRaid(unit)
+			local group = raidID and select(3, GetRaidRosterInfo(raidID)) or 1
+
 			guidToUnit[guid] = unit
-			guidToGroup[guid] = select(3, GetRaidRosterInfo(i))
+			guidToGroup[guid] = group
 
-			-- If the pets owners group changed then the pets group should be updated too
-			if guidToGroup[guid] ~= lastGroup then
-				self:UNIT_PET(unit)
+			local pet = self.unitToPet[unit]
+			local petGUID = pet and UnitGUID(pet)
+
+			activePets[unit] = petGUID
+
+			if petGUID then
+				guidToUnit[petGUID] = pet
+				guidToGroup[petGUID] = group
 			end
+		end
+	end
+
+	if GetNumGroupMembers() == 0 then
+		clearGUIDData()
+		update("player")
+	elseif not IsInRaid() then
+		update("player")
+
+		for i = 1, MAX_PARTY_MEMBERS do
+			update(format("party%d", i))
+		end
+	else
+		for i = 1, MAX_RAID_MEMBERS do
+			update(format("raid%d", i))
 		end
 	end
 
