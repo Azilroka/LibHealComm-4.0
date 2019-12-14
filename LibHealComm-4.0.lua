@@ -510,6 +510,118 @@ function HealComm:GetCasterHealAmount(guid, bitFlag, time)
 	return amount > 0 and amount or nil
 end
 
+function HealComm:GetHealAmountEx(dstGUID, dstBitFlag, dstTime, srcGUID, srcBitFlag, srcTime)
+	local dstAmount1 = 0
+	local dstAmount2 = 0
+	local srcAmount1 = 0
+	local srcAmount2 = 0
+
+	local currTime = GetTime()
+
+	dstBitFlag = dstBitFlag or ALL_HEALS
+	srcBitFlag = srcBitFlag or ALL_HEALS
+
+	for _, tbl in ipairs({pendingHeals, pendingHots}) do
+		for casterGUID, spells in pairs(tbl) do
+			local time
+
+			if casterGUID ~= srcGUID then
+				time = dstTime
+			else
+				time = srcTime
+			end
+
+			if spells then
+				for _, pending in pairs(spells) do
+					local bitType = pending.bitType or 0
+
+					if casterGUID ~= srcGUID then
+						bitType = bit.band(bitType, dstBitFlag)
+					else
+						bitType = bit.band(bitType, srcBitFlag)
+					end
+
+					if bitType > 0 then
+						for i = 1, #pending, 5 do
+							local targetGUID = pending[i]
+
+							if targetGUID == dstGUID then
+								local amount = pending[i + 1]
+								local stack = pending[i + 2]
+								local endTime = pending[i + 3]
+
+								endTime = endTime > 0 and endTime or pending.endTime
+
+								if endTime > currTime then
+									amount = amount * stack
+
+									local amount1 = 0
+									local amount2 = 0
+
+									if bitType == DIRECT_HEALS or bitType == BOMB_HEALS then
+										if not time or endTime <= time then
+											amount1 = amount
+										end
+
+										amount2 = amount
+									elseif bitType == HOT_HEALS or bitType == CHANNEL_HEALS then
+										local ticksLeft = pending[i + 4]
+										local ticks
+
+										if not time then
+											ticks = 1
+										elseif time >= endTime then
+											ticks = ticksLeft
+										else
+											local tickInterval = pending.tickInterval
+											local secondsLeft = endTime - currTime
+											local bandSeconds = max(time - currTime, 0)
+
+											ticks = floor(min(bandSeconds, secondsLeft) / tickInterval)
+
+											local nextTickIn = secondsLeft % tickInterval
+											local fractionalBand = bandSeconds % tickInterval
+
+											if nextTickIn > 0 and nextTickIn < fractionalBand then
+												ticks = ticks + 1
+											end
+										end
+
+										if ticks > ticksLeft then
+											ticks = ticksLeft
+										end
+
+										amount1 = amount * ticks
+										amount2 = amount * ticksLeft
+									end
+
+									if casterGUID ~= srcGUID then
+										dstAmount1 = dstAmount1 + amount1
+										dstAmount2 = dstAmount2 + amount2
+									else
+										srcAmount1 = srcAmount1 + amount1
+										srcAmount2 = srcAmount2 + amount2
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	dstAmount2 = dstAmount2 - dstAmount1
+	srcAmount2 = srcAmount2 - srcAmount1
+
+	dstAmount1 = dstAmount1 > 0 and dstAmount1 or nil
+	dstAmount2 = dstAmount2 > 0 and dstAmount2 or nil
+	srcAmount1 = srcAmount1 > 0 and srcAmount1 or nil
+	srcAmount2 = srcAmount2 > 0 and srcAmount2 or nil
+
+	return dstAmount1, dstAmount2, srcAmount1, srcAmount2
+end
+
 -- Healing class data
 -- Thanks to Gagorian (DrDamage) for letting me steal his formulas and such
 local playerCurrentRelic
