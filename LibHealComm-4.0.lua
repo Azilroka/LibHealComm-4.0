@@ -1,7 +1,7 @@
 if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
 
 local major = "LibHealComm-4.0"
-local minor = 83
+local minor = 84
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -2320,6 +2320,8 @@ function HealComm:OnInitialize()
 
 			if spellName == FirstAid then
 				local healAmount =  spellData[spellName].averages[spellRank]
+				if not healAmount then return end
+
 				local ticks = spellData[spellName].ticks[spellRank]
 
 				return CHANNEL_HEALS, ceil(healAmount / ticks), ticks, spellData[spellName].interval
