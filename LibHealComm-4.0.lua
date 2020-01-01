@@ -1,7 +1,7 @@
 if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
 
 local major = "LibHealComm-4.0"
-local minor = 85
+local minor = 86
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -1952,8 +1952,9 @@ function HealComm:UNIT_SPELLCAST_START(unit, cast, spellID)
 
 	-- Figure out who we are healing and for how much
 	local bitType, amount, ticks, tickInterval = CalculateHealing(castGUID, spellID, castUnit)
-	local targets, amt = GetHealTargets(bitType, castGUID, max(amount, 0), spellID)
+	if not amount then return end
 
+	local targets, amt = GetHealTargets(bitType, castGUID, max(amount, 0), spellID)
 	if not targets then return end -- only here until I compress/decompress npcs
 
 	if( bitType == DIRECT_HEALS ) then
