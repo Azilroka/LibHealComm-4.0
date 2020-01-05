@@ -9,7 +9,7 @@ externals:
         tag: latest
 
 move-folders:
-	libs/CallbackHandler-1.0/CallbackHandler-1.0: libs/CallbackHandler-1.0
+	libs/CallbackHandler-1.0/CallbackHandler-1.0: libs
 
 ignore:
 	- libs/CallbackHandler-1.0/LibStub
