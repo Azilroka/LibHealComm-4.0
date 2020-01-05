@@ -7,4 +7,13 @@ externals:
     libs/CallbackHandler-1.0:
         url: svn://svn.wowace.com/wow/callbackhandler/mainline/trunk
         tag: latest
-		
+
+move-folders:
+	libs/CallbackHandler-1.0/CallbackHandler-1.0: libs/CallbackHandler-1.0
+
+ignore:
+	- libs/CallbackHandler-1.0/LibStub
+	- libs/CallbackHandler-1.0/CallbackHandler-1.0.toc
+	- libs/CallbackHandler-1.0/CallbackHandler-1.0.xml
+	- libs/LibStub/tests
+	- libs/LibStub/LibStub.toc
