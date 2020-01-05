@@ -5,11 +5,8 @@ externals:
         url: svn://svn.wowace.com/wow/libstub/mainline/trunk
         tag: latest
     libs/CallbackHandler-1.0:
-        url: svn://svn.wowace.com/wow/callbackhandler/mainline/trunk
+        url: svn://svn.wowace.com/wow/callbackhandler/mainline/trunk//CallbackHandler-1.0
         tag: latest
-
-move-folders:
-	libs/CallbackHandler-1.0/CallbackHandler-1.0: libs
 
 ignore:
 	- libs/CallbackHandler-1.0/LibStub
