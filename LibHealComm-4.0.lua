@@ -877,6 +877,8 @@ if( playerClass == "DRUID" ) then
 	end
 end
 
+local hasDivineFavor
+
 if( playerClass == "PALADIN" ) then
 	LoadClassData = function()
 		local DivineFavor = GetSpellInfo(20216)
@@ -925,16 +927,10 @@ if( playerClass == "PALADIN" ) then
 			},
 		}
 
-		local hasDivineFavor
-
 		AuraHandler = function(unit, guid)
 			if( unit == "player" ) then
 				hasDivineFavor = unitHasAura("player", DivineFavor)
 			end
-		end
-
-		ResetChargeData = function(guid)
-			hasDivineFavor = unitHasAura("player", DivineFavor)
 		end
 
 		GetHealTargets = function(bitType, guid, healAmount, spellID)
@@ -964,7 +960,6 @@ if( playerClass == "PALADIN" ) then
 			end
 
 			if( hasDivineFavor or GetSpellCritChance(2) >= 100 ) then
-				hasDivineFavor = nil
 				healAmount = healAmount * 1.50
 			end
 
@@ -1972,9 +1967,16 @@ function HealComm:UNIT_SPELLCAST_SUCCEEDED(unit, cast, spellID)
 	if( unit ~= "player") then return end
 	local spellName = GetSpellInfo(spellID)
 
+	if spellID == 20216 then
+		hasDivineFavor = true
+	end
+
 	if spellData[spellName] and not spellData[spellName]._isChanneled then
+		hasDivineFavor = nil
 		parseHealEnd(playerGUID, nil, "name", spellID, false)
 		sendMessage(format("S::%d:0", spellID or 0))
+	elseif spellID == 20473 or spellID == 20929 or spellID == 20930 then -- Holy Shock
+		hasDivineFavor = nil
 	end
 end
 
