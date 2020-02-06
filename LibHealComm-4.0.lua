@@ -1298,7 +1298,7 @@ end
 local instanceType
 local function updateDistributionChannel()
 	if( instanceType == "pvp" ) then
-		distribution = "BATTLEGROUND"
+		distribution = "INSTANCE_CHAT"
 	elseif( IsInRaid() ) then
 		distribution = "RAID"
 	elseif( IsInGroup() ) then
