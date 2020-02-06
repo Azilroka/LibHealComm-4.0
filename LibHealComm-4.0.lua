@@ -1531,14 +1531,15 @@ local function parseChannelHeal(casterGUID, spellID, amount, totalTicks, ...)
 	wipe(pending)
 	pending.startTime = startTime
 	pending.endTime = endTime
-	pending.duration = max(pending.duration or 0, pending.endTime - pending.startTime)
+	pending.duration = endTime - startTime
 	pending.totalTicks = totalTicks
-	pending.tickInterval = (pending.endTime - pending.startTime) / totalTicks
+	pending.tickInterval = pending.duration / totalTicks
 	pending.spellID = spellID
 	pending.isMultiTarget = (select("#", ...) / inc) > 1
 	pending.bitType = CHANNEL_HEALS
 
-	loadHealList(pending, amount, 1, pending.endTime, ceil(pending.duration / pending.tickInterval), ...)
+	local ticksLeft = ceil((endTime - GetTime()) / pending.tickInterval)
+	loadHealList(pending, amount, 1, endTime, ticksLeft, ...)
 
 	HealComm.callbacks:Fire("HealComm_HealStarted", casterGUID, spellID, pending.bitType, pending.endTime, unpack(tempPlayerList))
 end
@@ -1671,13 +1672,15 @@ local function parseHealDelayed(casterGUID, startTimeRelative, endTimeRelative, 
 	elseif( pending.bitType == CHANNEL_HEALS ) then
 		pending.startTime = startTime
 		pending.endTime = endTime
-		pending.tickInterval = (pending.endTime - pending.startTime)
+		pending.duration = endTime - startTime
+		pending.tickInterval = pending.duration / pending.totalTicks
 	else
 		return
 	end
 
 	wipe(tempPlayerList)
 	for i=1, #(pending), 5 do
+		pending[i + 3] = endTime
 		tinsert(tempPlayerList, pending[i])
 	end
 
