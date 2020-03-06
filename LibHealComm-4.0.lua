@@ -628,6 +628,31 @@ function HealComm:GetHealAmountEx(dstGUID, dstBitFlag, dstTime, srcGUID, srcBitF
 	return dstAmount1, dstAmount2, srcAmount1, srcAmount2
 end
 
+-- Get the number of direct heals on a target
+function HealComm:GetNumHeals(filterGUID, time)
+	local numHeals = 0
+
+	for _, spells in pairs(pendingHeals) do
+		if spells then
+			for _, pending in pairs(spells) do
+				for i = 1, #(pending), 5 do
+					local guid = pending[i]
+					if( guid == filterGUID ) then
+						local endTime = pending[i + 3]
+						endTime = endTime > 0 and endTime or pending.endTime
+
+						if( pending.bitType == DIRECT_HEALS and ( not time or endTime <= time ) ) then
+							numHeals = numHeals + 1
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return numHeals
+end
+
 -- Healing class data
 -- Thanks to Gagorian (DrDamage) for letting me steal his formulas and such
 local playerCurrentRelic
