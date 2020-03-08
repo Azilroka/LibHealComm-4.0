@@ -633,23 +633,26 @@ end
 local playerCurrentRelic
 local guidToUnit, guidToGroup = HealComm.guidToUnit, HealComm.guidToGroup
 
--- UnitBuff priortizes our buffs over everyone elses when there is a name conflict, so yay for that
+local unitHasAura
+
 do
-	local function SpellIdPredicate(spellIdToFind, _, _, _, _, _, _, _, _, _, _, _, spellId)
-		return spellIdToFind == spellId;
+	local findAura = AuraUtil.FindAura
+	local findAuraByName = AuraUtil.FindAuraByName
+
+	local function spellIdPredicate(spellIdToFind, _, _, _, _, _, _, _, _, _, _, _, spellId)
+		return spellIdToFind == spellId
 	end
 
-	function AuraUtil.FindAuraBySpellId(spellId, unit, filter)
-		return AuraUtil.FindAura(SpellIdPredicate, unit, filter, spellId);
+	local function findAuraBySpellId(spellId, unit, filter)
+		return findAura(spellIdPredicate, unit, filter, spellId)
 	end
-end
 
- -- UnitBuff priortizes our buffs over everyone elses when there is a name conflict, so yay for that
-local function unitHasAura(unit, name)
-	if type(name) == "number" then
-		return AuraUtil.FindAuraBySpellId(name, unit)
-	else
-		return AuraUtil.FindAuraByName(name, unit)
+	function unitHasAura(unit, name)
+		if type(name) == "number" then
+			return findAuraBySpellId(name, unit)
+		else
+			return findAuraByName(name, unit)
+		end
 	end
 end
 
@@ -954,7 +957,7 @@ if( playerClass == "PALADIN" ) then
 
 			for auraID, values in pairs(blessings) do
 				if unitHasAura(unit, auraID) then
-					healAmount = calculateGeneralAmount(spellData[spellName].levels[spellRank], healAmount, values[spellName], 1, 1)
+					healAmount = calculateGeneralAmount(spellData[spellName].levels[spellRank], healAmount, values[spellName], healModifier, 1)
 					break
 				end
 			end
@@ -1258,13 +1261,13 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[17547] = 0.50, -- Mortal Strike
 	[19643] = 0.50, -- Mortal Strike
 	[24573] = 0.50, -- Mortal Strike
-	[26652] = 0.50, -- Mortal Strike
 	[12294] = 0.50, -- Mortal Strike (Rank 1)
 	[21551] = 0.50, -- Mortal Strike (Rank 2)
 	[21552] = 0.50, -- Mortal Strike (Rank 3)
 	[21553] = 0.50, -- Mortal Strike (Rank 4)
 	[23169] = 0.50, -- Brood Affliction: Green
 	[22859] = 0.50, -- Mortal Cleave
+	[7068] = 0.25, -- Veil of Shadow
 	[17820] = 0.25, -- Veil of Shadow
 	[22687] = 0.25, -- Veil of Shadow
 	[23224] = 0.25, -- Veil of Shadow
@@ -1272,7 +1275,6 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[28440] = 0.25, -- Veil of Shadow
 	[13583] = 0.50, -- Curse of the Deadwood
 	[23230] = 0.50, -- Blood Fury
-	[10060] = 1.20, -- Power Infusion
 }
 
 HealComm.healingStackMods = HealComm.healingStackMods or {
@@ -1388,6 +1390,10 @@ function HealComm:UNIT_AURA(unit)
 	wipe(alreadyAdded)
 
 	if( unit == "player" ) then
+		if unitHasAura("player", 10060) then -- Power Infusion
+			playerIncrease = playerIncrease * 1.20
+		end
+
 		playerHealModifier = playerIncrease * playerDecrease
 	end
 
