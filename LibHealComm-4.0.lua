@@ -393,37 +393,40 @@ function HealComm:GetGUIDUnitMapTable()
 end
 
 -- Gets the next heal landing on someone using the passed filters
-function HealComm:GetNextHealAmount(guid, bitFlag, time, ignoreGUID)
+function HealComm:GetNextHealAmount(guid, bitFlag, time, ignoreGUID, srcGUID)
 	local healTime, healAmount, healFrom
 	local currentTime = GetTime()
 
 	for _, tbl in pairs({pendingHeals, pendingHots}) do
 		for casterGUID, spells in pairs(tbl) do
-			if( not ignoreGUID or ignoreGUID ~= casterGUID ) then
+			if( not ignoreGUID or ignoreGUID ~= casterGUID ) and (not srcGUID or srcGUID == casterGUID) then
 				for _, pending in pairs(spells) do
 					if( pending.bitType and bit.band(pending.bitType, bitFlag) > 0 ) then
-						for i=1, #(pending), 5 do
-							local amount = pending[i + 1]
-							local stack = pending[i + 2]
-							local endTime = pending[i + 3]
-							endTime = endTime > 0 and endTime or pending.endTime
+						for i=1, #(pending), 5 do							
+							local targetGUID = pending[i]
+							if(not guid or targetGUID == guid) then
+								local amount = pending[i + 1]
+								local stack = pending[i + 2]
+								local endTime = pending[i + 3]
+								endTime = endTime > 0 and endTime or pending.endTime
 
-							-- Direct heals are easy, if they match the filter then return them
-							if( ( pending.bitType == DIRECT_HEALS or pending.bitType == BOMB_HEALS ) and ( not time or endTime <= time ) ) then
-								if( not healTime or endTime < healTime ) then
-									healTime = endTime
-									healAmount = amount * stack
-									healFrom = casterGUID
-								end
+								-- Direct heals are easy, if they match the filter then return them
+								if( ( pending.bitType == DIRECT_HEALS or pending.bitType == BOMB_HEALS ) and ( not time or endTime <= time ) ) then
+									if( not healTime or endTime < healTime ) then
+										healTime = endTime
+										healAmount = amount * stack
+										healFrom = casterGUID
+									end
 
-							-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
-							elseif( ( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) ) then
-								local secondsLeft = time and time - currentTime or endTime - currentTime
-								local nextTick = currentTime + (secondsLeft % pending.tickInterval)
-								if( not healTime or nextTick < healTime ) then
-									healTime = nextTick
-									healAmount = amount * stack
-									healFrom = casterGUID
+								-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
+								elseif( ( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) ) then
+									local secondsLeft = time and time - currentTime or endTime - currentTime
+									local nextTick = currentTime + (secondsLeft % pending.tickInterval)
+									if( not healTime or nextTick < healTime ) then
+										healTime = nextTick
+										healAmount = amount * stack
+										healFrom = casterGUID
+									end
 								end
 							end
 						end
