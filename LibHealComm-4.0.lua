@@ -1,7 +1,7 @@
 if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
 
 local major = "LibHealComm-4.0"
-local minor = 89
+local minor = 90
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -402,7 +402,7 @@ function HealComm:GetNextHealAmount(guid, bitFlag, time, ignoreGUID, srcGUID)
 			if( not ignoreGUID or ignoreGUID ~= casterGUID ) and (not srcGUID or srcGUID == casterGUID) then
 				for _, pending in pairs(spells) do
 					if( pending.bitType and bit.band(pending.bitType, bitFlag) > 0 ) then
-						for i=1, #(pending), 5 do							
+						for i=1, #(pending), 5 do
 							local targetGUID = pending[i]
 							if(not guid or targetGUID == guid) then
 								local amount = pending[i + 1]
