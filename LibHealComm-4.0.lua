@@ -2007,6 +2007,8 @@ end
 
 HealComm.UNIT_SPELLCAST_CHANNEL_START = HealComm.UNIT_SPELLCAST_START
 
+local spellCastSucceeded = {}
+
 function HealComm:UNIT_SPELLCAST_SUCCEEDED(unit, cast, spellID)
 	if( unit ~= "player") then return end
 	local spellName = GetSpellInfo(spellID)
@@ -2019,6 +2021,7 @@ function HealComm:UNIT_SPELLCAST_SUCCEEDED(unit, cast, spellID)
 		hasDivineFavor = nil
 		parseHealEnd(playerGUID, nil, "name", spellID, false)
 		sendMessage(format("S::%d:0", spellID or 0))
+		spellCastSucceeded[spellID] = true
 	elseif spellID == 20473 or spellID == 20929 or spellID == 20930 then -- Holy Shock
 		hasDivineFavor = nil
 	end
@@ -2028,8 +2031,12 @@ function HealComm:UNIT_SPELLCAST_STOP(unit, castGUID, spellID)
 	local spellName = GetSpellInfo(spellID)
 	if( unit ~= "player" or not spellData[spellName] or spellData[spellName]._isChanneled ) then return end
 
-	parseHealEnd(playerGUID, nil, "name", spellID, true)
-	sendMessage(format("S::%d:1", spellID or 0))
+	if not spellCastSucceeded[spellID] then
+		parseHealEnd(playerGUID, nil, "name", spellID, true)
+		sendMessage(format("S::%d:1", spellID or 0))
+	end
+
+	spellCastSucceeded[spellID] = nil
 end
 
 -- Cast didn't go through, recheck any charge data if necessary
