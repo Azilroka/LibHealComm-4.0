@@ -1735,7 +1735,7 @@ function HealComm:CHAT_MSG_ADDON(prefix, message, channel, sender)
 
 	-- New direct heal - D:<extra>:<spellID>:<amount>:target1,target2...
 	if( commType == "D" and arg1 and arg2 ) then
-		parseDirectHeal(casterGUID, spellID, tonumber(arg1), extraArg, strsplit(",", arg2))
+		parseDirectHeal(casterGUID, spellID, tonumber(arg1), tonumber(extraArg), strsplit(",", arg2))
 	-- New channel heal - C:<extra>:<spellID>:<amount>:<totalTicks>:target1,target2...
 	elseif( commType == "C" and arg1 and arg3 ) then
 		parseChannelHeal(casterGUID, spellID, tonumber(arg1), tonumber(arg2), strsplit(",", arg3))
@@ -1999,7 +1999,7 @@ function HealComm:UNIT_SPELLCAST_START(unit, cast, spellID)
 	if( bitType == DIRECT_HEALS ) then
 		local startTime, endTime = select(4, CastingInfo())
 		parseDirectHeal(playerGUID, spellID, amt, (endTime - startTime) / 1000, strsplit(",", targets))
-		sendMessage(format("D:%d:%d:%d:%s", (endTime - startTime) / 1000, spellID or 0, amt or "", targets))
+		sendMessage(format("D:%.3f:%d:%d:%s", (endTime - startTime) / 1000, spellID or 0, amt or "", targets))
 	elseif( bitType == CHANNEL_HEALS ) then
 		spellData[spellName]._isChanneled = true
 	end
