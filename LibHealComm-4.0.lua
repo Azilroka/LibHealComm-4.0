@@ -72,6 +72,8 @@ local CheckInteractDistance = CheckInteractDistance
 
 local COMBATLOG_OBJECT_AFFILIATION_MINE = COMBATLOG_OBJECT_AFFILIATION_MINE
 
+local isTBC = select(4, GetBuildInfo()) > 20000 and select(4, GetBuildInfo()) < 29999
+
 local spellRankTableData = {
 	[1] = { 774, 8936, 5185, 740, 635, 19750, 139, 2060, 596, 2061, 2054, 2050, 1064, 331, 8004, 136, 755, 689, 746, 33763, 32546 },
 	[2] = { 1058, 8938, 5186, 8918, 639, 19939, 6074, 10963, 996, 9472, 2055, 2052, 10622, 332, 8008, 3111, 3698, 699, 1159 },
@@ -765,13 +767,13 @@ if( playerClass == "DRUID" ) then
 		local GiftofNature = GetSpellInfo(17104)
 		local HealingTouch = GetSpellInfo(5185)
 		local ImprovedRejuv = GetSpellInfo(17111)
-		local Innervate = GetSpellInfo(29166)
+		local MarkoftheWild = GetSpellInfo(1126)
 		local Regrowth = GetSpellInfo(8936)
 		local Rejuvenation = GetSpellInfo(774)
 		local Tranquility = GetSpellInfo(740)
-		local Lifebloom = GetSpellInfo(33763)
-		local EmpoweredRejuv = GetSpellInfo(33886)
-		local EmpoweredTouch = GetSpellInfo(33879)
+		local Lifebloom = GetSpellInfo(33763) or "Lifebloom"
+		local EmpoweredRejuv = GetSpellInfo(33886) or "EmpoweredRejuv"
+		local EmpoweredTouch = GetSpellInfo(33879) or "EmpoweredTouch"
 
 		hotData[Regrowth] = { interval = 3, ticks = 7, coeff = 0.5, levels = { 12, 18, 24, 30, 36, 42, 48, 54, 60, 65 }, averages = { 98, 175, 259, 343, 427, 546, 686, 861, 1064, 1274 }}
 		hotData[Rejuvenation] = { interval = 3, levels = { 4, 10, 16, 22, 28, 34, 40, 46, 52, 58, 60, 63, 69 }, averages = { 32, 56, 116, 180, 244, 304, 388, 488, 608, 756, 888, 932, 1060 }}
@@ -802,12 +804,20 @@ if( playerClass == "DRUID" ) then
 			{avg(809, 905), avg(815, 911), avg(821, 917), avg(827, 923), avg(833, 929), avg(839, 935)},
 			{avg(1003, 1119), avg(1009, 1126), avg(1016, 1133), avg(1023, 1140), avg(1030, 1147), avg(1037, 1153)},
 			{avg(1215, 1355), avg(1222, 1363), avg(1230, 1371), avg(1238, 1379), avg(1245, 1386), avg(1253, 1394)} }}
-		spellData[Tranquility] = {coeff = 1/3, ticks = 5, interval = 2, levels = {30, 40, 50, 60, 70}, averages = {
-			{351 * 5, 354 * 5, 356 * 5, 358 * 5, 360 * 5, 362 * 5, 365 * 5},
-			{515 * 5, 518 * 5, 521 * 5, 523 * 5, 526 * 5, 528 * 5, 531 * 5},
-			{765 * 5, 769 * 5, 772 * 5, 776 * 5, 779 * 5, 782 * 5, 786 * 5},
-			{1097 * 5, 1101 * 5, 1105 * 5, 1109 * 5, 1112 * 5, 1116 * 5, 1120 * 5},
-			{1518 * 5} }}
+		if isTBC then
+			spellData[Tranquility] = {coeff = 1/3, ticks = 4, interval = 2, levels = {30, 40, 50, 60, 70}, averages = {
+				{351 * 5, 354 * 5, 356 * 5, 358 * 5, 360 * 5, 362 * 5, 365 * 5},
+				{515 * 5, 518 * 5, 521 * 5, 523 * 5, 526 * 5, 528 * 5, 531 * 5},
+				{765 * 5, 769 * 5, 772 * 5, 776 * 5, 779 * 5, 782 * 5, 786 * 5},
+				{1097 * 5, 1101 * 5, 1105 * 5, 1109 * 5, 1112 * 5, 1116 * 5, 1120 * 5},
+				{1518 * 5} }}
+		else
+			spellData[Tranquility] = {coeff = 1/3, ticks = 5, interval = 2, levels = {30, 40, 50, 60}, averages = {
+				{94 * 5, 95 * 5, 96 * 5, 96 * 5, 97 * 5, 97 * 5, 98 * 5},
+				{138 * 5, 139 * 5, 140 * 5, 141 * 5, 141 * 5, 142 * 5, 143 * 5},
+				{205 * 5, 206 * 5, 207 * 5, 208 * 5, 209 * 5, 210 * 5, 211 * 5},
+				{294 * 5} }}
+		end
 
 		talentData[GiftofNature] = {mod = 0.02, current = 0}
 		talentData[ImprovedRejuv] = {mod = 0.05, current = 0}
@@ -821,14 +831,14 @@ if( playerClass == "DRUID" ) then
 		local rejuIdols = {[186054] = 15, [22398] = 50, [25643] = 86}
 
 		GetHealTargets = function(bitType, guid, healAmount, spellID)
-			-- Tranquility pulses on everyone within 30 yards, if they are in range of Innervate they'll get Tranquility
+			-- Tranquility pulses on everyone within 30 yards, if they are in range of Mark of the Wild they'll get Tranquility
 			local spellName = GetSpellInfo(spellID)
 			if( spellName == Tranquility ) then
 				local targets = compressGUID[playerGUID]
 				local playerGroup = guidToGroup[playerGUID]
 
 				for groupGUID, id in pairs(guidToGroup) do
-					if( id == playerGroup and playerGUID ~= groupGUID and not IsSpellInRange(Innervate, guidToUnit[groupGUID]) == 1 ) then
+					if( id == playerGroup and playerGUID ~= groupGUID and not IsSpellInRange(MarkoftheWild, guidToUnit[groupGUID]) == 1 ) then
 						targets = targets .. "," .. compressGUID[groupGUID]
 					end
 				end
@@ -1097,9 +1107,9 @@ if( playerClass == "PRIEST" ) then
 		local ImprovedRenew = GetSpellInfo(14908)
 		local GreaterHealHot = GetSpellInfo(22009)
 		local CureDisease = GetSpellInfo(528)
-		local BindingHeal = GetSpellInfo(32546)
-		local EmpoweredHealing = GetSpellInfo(33158)
-		local Renewal = GetSpellInfo(37563) -- T4 bonus
+		local BindingHeal = GetSpellInfo(32546) or "Binding Heal"
+		local EmpoweredHealing = GetSpellInfo(33158) or "Empowered Healing"
+		local Renewal = GetSpellInfo(37563) or "Renewal" -- T4 bonus
 
 		hotData[Renew] = {coeff = 1, interval = 3, ticks = 5, levels = {8, 14, 20, 26, 32, 38, 44, 50, 56, 60, 65, 70}, averages = {
 			45, 100, 175, 245, 315, 400, 510, 650, 810, 970, 1010, 1110 }}
@@ -1255,7 +1265,7 @@ if( playerClass == "SHAMAN" ) then
 		local ChainHeal = GetSpellInfo(1064)
 		local HealingWave = GetSpellInfo(331)
 		local LesserHealingWave = GetSpellInfo(8004)
-		local ImpChainHeal = GetSpellInfo(30872)
+		local ImpChainHeal = GetSpellInfo(30872) or "Improved Chain Heal"
 		local HealingWay = GetSpellInfo(29206)
 		local Purification = GetSpellInfo(16178)
 
