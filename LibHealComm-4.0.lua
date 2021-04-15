@@ -775,7 +775,7 @@ if( playerClass == "DRUID" ) then
 		local EmpoweredRejuv = GetSpellInfo(33886) or "EmpoweredRejuv"
 		local EmpoweredTouch = GetSpellInfo(33879) or "EmpoweredTouch"
 
-		hotData[Regrowth] = { interval = 3, ticks = 7, coeff = isTBC and 0.7 or 0.5, levels = { 12, 18, 24, 30, 36, 42, 48, 54, 60, 65 }, averages = { 98, 175, 259, 343, 427, 546, 686, 861, 1064, 1274 }} -- coeff is calculated ((21/15)/((21/15)+(2/3.5))) but testing suggests a rounded value of 0.7
+		hotData[Regrowth] = { interval = 3, ticks = 7, coeff = isTBC and 0.7 or 0.5, levels = { 12, 18, 24, 30, 36, 42, 48, 54, 60, 65 }, averages = { 98, 175, 259, 343, 427, 546, 686, 861, 1064, 1274 }}
 		hotData[Rejuvenation] = { interval = 3, levels = { 4, 10, 16, 22, 28, 34, 40, 46, 52, 58, 60, 63, 69 }, averages = { 32, 56, 116, 180, 244, 304, 388, 488, 608, 756, 888, 932, 1060 }}
 		hotData[Lifebloom] = {interval = 1, ticks = 7, coeff = 0.52, dhCoeff = 0.34335, levels = {64}, averages = {273}, bomb = {600}}
 
@@ -858,7 +858,13 @@ if( playerClass == "DRUID" ) then
 			local spModifier = 1
 			local bombAmount, totalTicks
 
-			healModifier = healModifier * (1 + talentData[GiftofNature].current)
+			-- Gift of Nature
+			if isTBC then
+				healModifier = healModifier * (1 + talentData[GiftofNature].current)
+			else
+				-- Gift of Nature does only apply to base values in classic
+				healAmount = healAmount * (1 + talentData[GiftofNature].current)
+			end
 
 			-- Rejuvenation
 			if( spellName == Rejuvenation ) then
@@ -933,7 +939,12 @@ if( playerClass == "DRUID" ) then
 			local spModifier = 1
 
 			-- Gift of Nature
-			healModifier = healModifier * (1 + talentData[GiftofNature].current)
+			if isTBC then
+				healModifier = healModifier * (1 + talentData[GiftofNature].current)
+			else
+				-- Gift of Nature does only apply to base values in classic
+				healAmount = healAmount * (1 + talentData[GiftofNature].current)
+			end
 
 			-- Regrowth
 			if( spellName == Regrowth ) then
@@ -1198,13 +1209,23 @@ if( playerClass == "PRIEST" ) then
 			local spModifier = 1
 			local totalTicks
 
-			healModifier = healModifier * (1 + talentData[SpiritualHealing].current)
+			if isTBC then
+				healModifier = healModifier * (1 + talentData[SpiritualHealing].current)
+			else
+				-- Spiritual Healing only applies to base values
+				healAmount = healAmount * (1 + talentData[SpiritualHealing].current)
+			end
 
 			if( spellName == Renew or spellName == GreaterHealHot ) then
-				healModifier = healModifier * (1 + talentData[ImprovedRenew].current)
+				if isTBC then
+					healModifier = healModifier * (1 + talentData[ImprovedRenew].current)
+				else
+					-- Improved Renew only applies to the base value in classic
+					healAmount = healAmount * (1 + talentData[ImprovedRenew].current)
+				end
 
 				local duration = 15
-				local ticks = duration / hotData[spellName].interval
+				local ticks = hotData[spellName].ticks
 
 				if( equippedSetCache["Oracle"] >= 5 or equippedSetCache["Avatar"] >= 4 ) then
 					healAmount = healAmount + (healAmount / ticks) -- Add Tick Amount Gained by Set.
@@ -1214,7 +1235,6 @@ if( playerClass == "PRIEST" ) then
 
 				totalTicks = ticks
 
-				spellPower = spellPower * (duration / 15)
 				spellPower = spellPower / ticks
 				healAmount = healAmount / ticks
 			end
@@ -1231,11 +1251,15 @@ if( playerClass == "PRIEST" ) then
 			local healModifier = HealComm:GetHealModifier(guid) * playerHealModifier
 			local spModifier = 1
 
-			healModifier = healModifier * (1 + talentData[SpiritualHealing].current)
+			if isTBC then
+				healModifier = healModifier * (1 + talentData[SpiritualHealing].current)
+			else
+				healAmount = healAmount * (1 + talentData[SpiritualHealing].current)
+			end
 
 			-- Greater Heal
 			if( spellName == GreaterHeal ) then
-				if( equippedSetCache["Absolution"] >= 4 ) then healModifier = healModifier + 0.05 end
+				if( equippedSetCache["Absolution"] >= 4 ) then healModifier = healModifier * 1.05 end
 				healAmount = healAmount + (spellPower * (talentData[EmpoweredHealing].current * 2))
 				spellPower = spellPower * spellData[spellName].coeff
 			-- Flash Heal
@@ -1328,14 +1352,19 @@ if( playerClass == "SHAMAN" ) then
 			local healModifier = HealComm:GetHealModifier(guid) * playerHealModifier
 			local spModifier = 1
 
-			healModifier = healModifier * (1 + talentData[Purification].current)
+			if isTBC then
+				healModifier = healModifier * (1 + talentData[Purification].current)
+			else
+				-- Purification only applies to base values in classic
+				healAmount = healAmount * (1 + talentData[Purification].current)
+			end
 
 			-- Chain Heal
 			if( spellName == ChainHeal ) then
 				spellPower = spellPower * spellData[spellName].coeff
 				
 				if( equippedSetCache["Skyshatter"] >= 4 ) then
-					healModifier = healModifier + 0.05
+					healModifier = healModifier * 1.05
 				end
 				
 				healModifier = healModifier * (1 + talentData[ImpChainHeal].current)
