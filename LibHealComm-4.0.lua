@@ -868,7 +868,12 @@ if( playerClass == "DRUID" ) then
 
 			-- Rejuvenation
 			if( spellName == Rejuvenation ) then
-				healModifier = healModifier * (1 + talentData[ImprovedRejuv].current)
+				if isTBC then
+					healModifier = healModifier * (1 + talentData[ImprovedRejuv].current)
+				else
+					-- Improved Rejuvenation only applies to base values in classic
+					healAmount = healAmount * (1 + talentData[ImprovedRejuv].current)
+				end
 
 				if( playerCurrentRelic and rejuIdols[playerCurrentRelic] ) then
 					spellPower = spellPower + rejuIdols[playerCurrentRelic]
