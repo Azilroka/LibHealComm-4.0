@@ -1,7 +1,7 @@
 if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
 
 local major = "LibHealComm-4.0"
-local minor = 92
+local minor = 93
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -1416,7 +1416,11 @@ if( playerClass == "HUNTER" ) then
 	LoadClassData = function()
 		local MendPet = GetSpellInfo(136)
 
-		spellData[MendPet] = { interval = 1, levels = { 12, 20, 28, 36, 44, 52, 60 }, ticks = 5, averages = {100, 190, 340, 515, 710, 945, 1225 } }
+		if isTBC then
+			hotData[MendPet] = { interval = 3, levels = { 12, 20, 28, 36, 44, 52, 60, 68 }, ticks = 5, averages = {125, 250, 450, 700, 1000, 1400, 1825, 2375 } }
+		else
+			spellData[MendPet] = { interval = 1, levels = { 12, 20, 28, 36, 44, 52, 60 }, ticks = 5, averages = {100, 190, 340, 515, 710, 945, 1225 } }
+		end
 
 		itemSetsData["Giantstalker"] = {16851, 16849, 16850, 16845, 16848, 16852, 16846, 16847}
 
@@ -1424,6 +1428,15 @@ if( playerClass == "HUNTER" ) then
 			return compressGUID[UnitGUID("pet")], healAmount
 		end
 
+		CalculateHotHealing = function(guid, spellID)
+			local spellName, spellRank = GetSpellInfo(spellID), SpellIDToRank[spellID]
+			local amount = getBaseHealAmount(spellData, spellName, spellRank)
+
+			if( equippedSetCache["Giantstalker"] >= 3 ) then amount = amount * 1.1 end
+
+			return HOT_HEALS, ceil(amount / spellData[spellName].ticks), spellData[spellName].ticks, spellData[spellName].interval
+		end
+		
 		CalculateHealing = function(guid, spellID)
 			local spellName, spellRank = GetSpellInfo(spellID), SpellIDToRank[spellID]
 			local amount = getBaseHealAmount(spellData, spellName, spellRank)
@@ -1441,7 +1454,7 @@ if( playerClass == "WARLOCK" ) then
 		--local DrainLife = GetSpellInfo(689)
 		local ImpHealthFunnel = GetSpellInfo(18703)
 
-		spellData[HealthFunnel] = { interval = 1, levels = { 12, 20, 28, 36, 44, 52, 60 }, ticks = 10, averages = { 120, 240, 430, 640, 890, 1190, 1530 } }
+		spellData[HealthFunnel] = { interval = 1, levels = { 12, 20, 28, 36, 44, 52, 60, 67 }, ticks = 10, averages = { 120, 240, 430, 640, 890, 1190, 1530, 1880 } }
 		--spellData[DrainLife] = { interval = 1, levels = { 14, 22, 30, 38, 46, 54 }, ticks = 5, averages = { 10 * 5, 17 * 5, 29 * 5, 41 * 5, 55 * 5, 71 * 5 } }
 
 		talentData[ImpHealthFunnel] = { mod = 0.1, current = 0 }
@@ -1483,6 +1496,8 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 	[21551] = 0.50, -- Mortal Strike (Rank 2)
 	[21552] = 0.50, -- Mortal Strike (Rank 3)
 	[21553] = 0.50, -- Mortal Strike (Rank 4)
+	[25248] = 0.50, -- Mortal Strike (Rank 5)
+	[30330] = 0.50, -- Mortal Strike (Rank 6)
 	[23169] = 0.50, -- Brood Affliction: Green
 	[22859] = 0.50, -- Mortal Cleave
 	[7068] = 0.25, -- Veil of Shadow
@@ -1497,8 +1512,12 @@ HealComm.healingModifiers = HealComm.healingModifiers or {
 
 HealComm.healingStackMods = HealComm.healingStackMods or {
 	-- Mortal Wound
-	[25646] = function(stacks) return 1 - stacks * 0.10 end,
-	[28467] = function(stacks) return 1 - stacks * 0.10 end,
+	[25646] = function(stacks) return 1 - stacks * 0.10 end, --Gluth
+	[28467] = function(stacks) return 1 - stacks * 0.10 end, --Unstoppable Abomination
+	[30641] = function(stacks) return 1 - stacks * 0.05 end, --Watchkeeper Gargolmar
+	[31464] = function(stacks) return 1 - stacks * 0.10 end, --Temporus
+	[36814] = function(stacks) return 1 - stacks * 0.10 end, --Watchkeeper Gargolmar(heroic)
+	[38770] = function(stacks) return 1 - stacks * 0.05 end, --Maggoc
 }
 
 local healingStackMods = HealComm.healingStackMods
@@ -2605,8 +2624,8 @@ function HealComm:OnInitialize()
 	do
 		local FirstAid = GetSpellInfo(746)
 
-		spellData[FirstAid] = { ticks = {6, 6, 7, 7, 8, 8, 8, 8, 8, 8, 8, 10}, interval = 1, averages = {
-			66, 114, 161, 301, 400, 640, 800, 1104, 1360, 2000} }
+		spellData[FirstAid] = { ticks = {6, 6, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8}, interval = 1, averages = {
+			66, 114, 161, 301, 400, 640, 800, 1104, 1360, 2000, 2800, 3400} }
 
 		local _GetHealTargets = GetHealTargets
 
