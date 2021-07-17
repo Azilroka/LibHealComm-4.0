@@ -1464,7 +1464,13 @@ if( playerClass == "WARLOCK" ) then
 		talentData[ImpHealthFunnel] = { mod = 0.1, current = 0 }
 
 		GetHealTargets = function(bitType, guid, healAmount, spellID)
-			return compressGUID[UnitGUID("pet")], healAmount
+			local spellName = GetSpellInfo(spellID)
+			if ( spellName == HealthFunnel ) then
+				return compressGUID[UnitGUID("pet")], healAmount
+			elseif ( spellName == DrainLife ) then
+				return compressGUID[playerGUID], healAmount
+			end
+			return compressGUID[guid], healAmount
 		end
 
 		CalculateHealing = function(guid, spellID)
@@ -2171,10 +2177,12 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(...)
 	local timestamp, eventType, hideCaster, sourceGUID, sourceName, sourceFlags, sourceRaidFlags, destGUID, destName, destFlags, destRaidFlags = ...
 	if( not eventRegistered[eventType] ) then return end
 
-	local _, spellName = select(12, ...)
+	local spellID, spellName = select(12, ...)
 	local destUnit = guidToUnit[destGUID]
-	local spellID = destUnit and select(10, unitHasAura(destUnit, spellName)) or select(7, GetSpellInfo(spellName))
-
+	if not isTBC then
+		spellID = destUnit and select(10, unitHasAura(destUnit, spellName)) or select(7, GetSpellInfo(spellName))
+	end
+	
 	-- Heal or hot ticked that the library is tracking
 	-- It's more efficient/accurate to have the library keep track of this locally, spamming the comm channel would not be a very good thing especially when a single player can have 4 - 8 hots/channels going on them.
 	if( eventType == "SPELL_HEAL" or eventType == "SPELL_PERIODIC_HEAL" ) then
@@ -2229,7 +2237,7 @@ function HealComm:COMBAT_LOG_EVENT_UNFILTERED(...)
 		elseif spellData[spellName] and spellData[spellName]._isChanneled then
 			local bitType, amount, totalTicks, tickInterval = CalculateHealing(destGUID, spellID, destUnit)
 			if bitType == CHANNEL_HEALS then
-				local targets, amt = compressGUID[destGUID], max(amount, 0)
+				local targets, amt = GetHealTargets(type, destGUID, max(amount, 0), spellID)
 				if targets then
 					local endTime = select(5, ChannelInfo())
 					if endTime then
@@ -2349,9 +2357,11 @@ function HealComm:UNIT_SPELLCAST_START(unit, cast, spellID)
 
 	local castGUID = castGUIDs[spellID]
 	local castUnit = guidToUnit[castGUID]
-	if isTBC and not castUnit and spellID == 32546 and castGUID == UnitGUID("target") then
-		castGUID = UnitGUID("player")
-		castUnit = "player"
+	if isTBC and not castUnit and castGUID == UnitGUID("target") then
+		if spellID == 32546 or spellName == GetSpellInfo(689) then
+			castGUID = UnitGUID("player")
+			castUnit = "player"
+		end
 	end
 	if( not castGUID or not castUnit ) then
 		return
@@ -2400,6 +2410,18 @@ function HealComm:UNIT_SPELLCAST_STOP(unit, castGUID, spellID)
 	if( unit ~= "player" or not spellData[spellName] or spellData[spellName]._isChanneled ) then return end
 
 	if not spellCastSucceeded[spellID] then
+		parseHealEnd(playerGUID, nil, "name", spellID, true)
+		sendMessage(format("S::%d:1", spellID or 0))
+	end
+
+	spellCastSucceeded[spellID] = nil
+end
+
+function HealComm:UNIT_SPELLCAST_CHANNEL_STOP(unit, castGUID, spellID)
+	local spellName = GetSpellInfo(spellID)
+	if( unit ~= "player" or not spellData[spellName] ) then return end
+
+	if not spellCastSucceeded[spellName] then
 		parseHealEnd(playerGUID, nil, "name", spellID, true)
 		sendMessage(format("S::%d:1", spellID or 0))
 	end
@@ -2778,6 +2800,7 @@ function HealComm:OnInitialize()
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
