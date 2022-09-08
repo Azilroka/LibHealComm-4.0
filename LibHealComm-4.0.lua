@@ -2922,6 +2922,18 @@ function HealComm:UNIT_SPELLCAST_STOP(unit, castGUID, spellID)
 	spellCastSucceeded[spellID] = nil
 end
 
+function HealComm:UNIT_SPELLCAST_CHANNEL_STOP(unit, _, spellID)
+	-- Also end heal if a Penance cast is stopped prematurely (e.g. by movement)
+	if( unit ~= "player" ) then return end
+
+	if not spellCastSucceeded[spellID] then
+		parseHealEnd(playerGUID, nil, "name", spellID, true)
+		sendMessage(format("S::%d:1", spellID or 0))
+	end
+
+	spellCastSucceeded[spellID] = nil
+end
+
 -- Cast didn't go through, recheck any charge data if necessary
 function HealComm:UNIT_SPELLCAST_INTERRUPTED(unit, castGUID, spellID)
 	local spellName = GetSpellInfo(spellID)
@@ -3305,6 +3317,7 @@ function HealComm:OnInitialize()
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_START")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_DELAYED")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_UPDATE")
 	self.eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
