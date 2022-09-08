@@ -2923,15 +2923,14 @@ function HealComm:UNIT_SPELLCAST_STOP(unit, castGUID, spellID)
 end
 
 function HealComm:UNIT_SPELLCAST_CHANNEL_STOP(unit, _, spellID)
-	-- Also end heal if a Penance cast is stopped prematurely (e.g. by movement)
-	if( unit ~= "player" ) then return end
+	local spellName = GetSpellInfo(spellID)
+	if( unit ~= "player" or not spellData[spellName] ) then return end
 
-	if not spellCastSucceeded[spellID] then
+	-- End heal if a Penance cast is stopped prematurely (e.g. by movement)
+	if( spellName == "Penance" ) then
 		parseHealEnd(playerGUID, nil, "name", spellID, true)
 		sendMessage(format("S::%d:1", spellID or 0))
 	end
-
-	spellCastSucceeded[spellID] = nil
 end
 
 -- Cast didn't go through, recheck any charge data if necessary
