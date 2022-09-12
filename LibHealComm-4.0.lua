@@ -1,5 +1,5 @@
 local major = "LibHealComm-4.0"
-local minor = 107
+local minor = 108
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -3314,7 +3314,7 @@ function HealComm:OnInitialize()
 	self.eventFrame:RegisterEvent("UPDATE_MOUSEOVER_UNIT")
 	self.eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
 	self.eventFrame:RegisterEvent("CHARACTER_POINTS_CHANGED")
-	self.eventFrame:RegisterEvent("UNIT_AURA")
+	self.eventFrame:RegisterUnitEvent("UNIT_AURA", 'player')
 	if isWrath then
 		self.eventFrame:RegisterEvent("GLYPH_ADDED")
 		self.eventFrame:RegisterEvent("GLYPH_REMOVED")
