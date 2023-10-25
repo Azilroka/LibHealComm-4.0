@@ -2071,7 +2071,7 @@ end
 -- Keep track of where all the data should be going
 local instanceType
 local function updateDistributionChannel()
-	if( instanceType == "pvp" or instanceType == "arena" ) then
+	if( instanceType == "pvp" or instanceType == "arena" or IsInGroup(LE_PARTY_CATEGORY_INSTANCE) ) then
 		distribution = "INSTANCE_CHAT"
 	elseif( IsInRaid() ) then
 		distribution = "RAID"
