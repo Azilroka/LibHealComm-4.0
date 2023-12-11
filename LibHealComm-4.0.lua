@@ -1,3 +1,5 @@
+if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
+
 local major = "LibHealComm-4.0"
 local minor = 110
 assert(LibStub, format("%s requires LibStub.", major))
@@ -407,6 +409,62 @@ function HealComm:GetGUIDUnitMapTable()
 	end
 
 	return HealComm.protectedMap
+end
+
+
+-- Custom function for HealBarsClassic that returns heals within a timeframe
+function HealComm:GetTimeframeHealAmount(guid, bitFlag, startTime, time, ignoreGUID,srcGUID)
+
+	local healFrom,healTime
+	local healAmount = 0
+	local currentTime = startTime or GetTime()
+
+	if startTime and time and (startTime > time) then return end
+
+	for _, tbl in pairs({pendingHeals, pendingHots}) do
+		for casterGUID, spells in pairs(tbl) do
+			if( not ignoreGUID or ignoreGUID ~= casterGUID ) and (not srcGUID or srcGUID == casterGUID) then
+				for _, pending in pairs(spells) do
+					if( pending.bitType and bit.band(pending.bitType, bitFlag) > 0 ) then
+						for i=1, #(pending), 5 do
+							local targetGUID = pending[i]
+							if(not guid or targetGUID == guid) then
+								local amount = pending[i + 1]
+								local stack = pending[i + 2]
+								local endTime = pending[i + 3]
+								endTime = endTime > 0 and endTime or pending.endTime
+								-- Direct heals are easy, if they match the filter then return them
+								if( ( pending.bitType == DIRECT_HEALS or pending.bitType == BOMB_HEALS ) and ( not time or not startTime 
+																			or (startTime <= endTime and endTime <= time) ) ) then 										
+									if not healTime or (endTime < healTime) then
+										healTime = endTime
+										healFrom = casterGUID
+										healAmount = healAmount + (amount * stack)
+									end
+								-- Channeled heals and hots, have to figure out how many times it'll tick within the given time band
+								elseif( ( pending.bitType == CHANNEL_HEALS or pending.bitType == HOT_HEALS ) ) then
+									local ticksLeft = pending[i + 4]
+									local secondsLeft = endTime - currentTime
+									local bandSeconds = time - currentTime
+									local ticks = floor(min(bandSeconds, secondsLeft) / pending.tickInterval)
+									local nextTickIn = secondsLeft % pending.tickInterval
+									local fractionalBand = bandSeconds % pending.tickInterval
+									if( nextTickIn > 0 and nextTickIn < fractionalBand ) then
+										ticks = ticks + 1
+									end
+
+									healAmount = healAmount + (amount * stack) * min(ticks, ticksLeft)
+								end
+								
+								
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	return healAmount, healFrom, healTime
 end
 
 -- Gets the next heal landing on someone using the passed filters
@@ -3059,6 +3117,17 @@ end
 
 -- Spell was cast somehow
 function HealComm:CastSpell(arg, unit)
+
+	--Set lastSentID so macro heals work
+	if tonumber(arg) then
+		lastSentID = arg
+	else
+		local _, _, _, _, _, _, spellID = GetSpellInfo(arg)
+		lastSentID = spellID
+	end
+	guidPriorities[lastSentID] = nil
+	
+
 	-- If the spell is waiting for a target and it's a spell action button then we know that the GUID has to be mouseover or a key binding cast.
 	if( unit and UnitCanAssist("player", unit)  ) then
 		setCastData(4, UnitName(unit), UnitGUID(unit))
