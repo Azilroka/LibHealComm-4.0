@@ -2427,7 +2427,7 @@ local function parseHotHeal(casterGUID, wasUpdated, spellID, tickAmount, totalTi
 	pending.tickInterval = totalTicks and duration / totalTicks or tickInterval
 	pending.spellID = spellID
 	pending.hasVariableTicks = type(tickAmount) == "string"
-	pending.isMutliTarget = (select("#", ...) / inc) > 1
+	pending.isMultiTarget = (select("#", ...) / inc) > 1
 	pending.bitType = HOT_HEALS
 
 	-- As you can't rely on a hot being the absolutely only one up, have to apply the total amount now :<
