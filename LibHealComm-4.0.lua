@@ -1764,7 +1764,8 @@ if( playerClass == "SHAMAN" ) then
 		hotData[Earthliving] = {interval = 3, ticks = 4, coeff = 0.364, levels = {30, 40, 50, 60, 70, 80}, averages = {116, 160, 220, 348, 456, 652}}
 
 		if isSoD then
-			hotData[HealingRain] = {interval = 1, ticks = 10, coeff = 10 * 0.063, levels = {nil}, averages = generateSODAverages(29.888200, 0.15, 0.690312, 0.136267)}
+			--Multiplied generateSODAverages levelCoeff by 10 for number of ticks
+			hotData[HealingRain] = {interval = 1, ticks = 10, coeff = 10 * 0.063, levels = {nil}, averages = generateSODAverages(29.888200, 10*0.15, 0.690312, 0.136267)}
 		end
 
 		spellData[ChainHeal] = {coeff = 2.5 / 3.5, levels = {40, 46, 54, 61, 68, 74, 80}, averages = {
