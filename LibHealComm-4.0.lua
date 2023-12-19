@@ -1743,7 +1743,7 @@ if( playerClass == "PRIEST" ) then
 	end
 end
 
--- Keep track of current cast targer of Healing Rain
+-- Keep track of current cast target of Healing Rain
 local healingRainTargetGUID
 
 if( playerClass == "SHAMAN" ) then
