@@ -1,7 +1,7 @@
 if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
 
 local major = "LibHealComm-4.0"
-local minor = 111
+local minor = 112
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -3223,15 +3223,15 @@ end
 -- Spell was cast somehow
 function HealComm:CastSpell(arg, unit)
 
-	--Set lastSentID so macro heals work
-	if tonumber(arg) then
-		lastSentID = arg
-	else
-		local _, _, _, _, _, _, spellID = GetSpellInfo(arg)
-		lastSentID = spellID
+	--Macro Heals with /stopcasting do not trigger UNIT_SPELLCAST_SENT
+	--so we must set lastSentID here
+	local spellID
+	if tonumber(arg) then spellID = arg else spellID = select(7,GetSpellInfo(arg)) end
+	local spellName = GetSpellInfo(spellID)
+	if spellName and (hotData[spellName] or spellData[spellName]) then
+		lastSentID = penanceIDs[spellID] or spellID
+		guidPriorities[lastSentID] = nil
 	end
-	guidPriorities[lastSentID] = nil
-	
 
 	-- If the spell is waiting for a target and it's a spell action button then we know that the GUID has to be mouseover or a key binding cast.
 	if( unit and UnitCanAssist("player", unit)  ) then
