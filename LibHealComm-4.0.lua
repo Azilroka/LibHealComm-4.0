@@ -1550,7 +1550,7 @@ if( playerClass == "PRIEST" ) then
 			{avg(1952, 2508), avg(1955, 2512), avg(1959, 2516)} }}
 
 		if isSoD then
-			spellData[Penance] = {_isChanneled = true, coeff = 0.857, ticks = 3, levels = {nil}, averages = generateSODAverages(38.258376, 1.06, 0.904195, 0.161311)}
+			spellData[Penance] = {_isChanneled = true, coeff = 0.857, ticks = 3, levels = {nil}, averages = generateSODAverages(38.258376, 1.06 * 0.8, 0.904195, 0.161311)}
 		else
 			spellData[Penance] = {_isChanneled = true, coeff = 0.857, ticks = 3, levels = {60, 70, 75, 80}, averages = {avg(670, 756), avg(805, 909), avg(1278, 1442), avg(1484, 1676)}}
 		end
