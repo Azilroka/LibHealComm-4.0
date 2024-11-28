@@ -925,7 +925,7 @@ if( playerClass == "DRUID" ) then
 			hotData[Lifebloom] = {interval = 1, ticks = 7, coeff = 0.52, dhCoeff = 0.34335, levels = {64}, averages = {273}, bomb = {600}}
 		elseif isSoD then
 			hotData[Lifebloom] = {interval = 1, ticks = 7, coeff = 7 * 0.051, dhCoeff = 0.274, levels = {nil} ,averages = generateSODAverages(38.949830, 0.04 * 7, 0.606705, 0.167780), bomb = generateSODAverages(38.949830, 0.57, 0.606705, 0.167780)}
-			hotData[WildGrowth] = {interval = 1, ticks = 7, coeff = 7 * 0.061, levels = {nil}, averages = generateSODAverages(38.949830, 0.34 * 7 , 0.606705, 0.167780)}
+			hotData[WildGrowth] = {interval = 1, ticks = 7, coeff = 7 * 0.03, levels = {nil}, averages = generateSODAverages(38.949830, 0.17 * 7 , 0.606705, 0.167780)}
 		end
 		if isWrath then
 			spellData[HealingTouch] = { levels = {1, 8, 14, 20, 26, 32, 38, 44, 50, 56, 60, 62, 69, 74, 79}, averages = {
