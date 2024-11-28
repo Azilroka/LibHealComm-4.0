@@ -1445,7 +1445,7 @@ if( playerClass == "PALADIN" ) then
 					spellPower = spellPower + holyLibrams[playerCurrentRelic]
 				elseif( spellName == FlashofLight and flashLibrams[playerCurrentRelic] ) then
 					spellPower = spellPower + flashLibrams[playerCurrentRelic]
-				if( isSoD and spellName == DivineLight and holyLibrams[playerCurrentRelic] ) then
+				elseif( isSoD and spellName == DivineLight and holyLibrams[playerCurrentRelic] ) then
 					spellPower = spellPower + holyLibrams[playerCurrentRelic]
 				end
 			end
