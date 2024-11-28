@@ -2207,6 +2207,8 @@ if isWrath then
 	HealComm.healingModifiers[45237] = 1.03 -- Focused Will Rank 1
 	HealComm.healingModifiers[45241] = 1.04 -- Focused Will Rank 2
 	HealComm.healingModifiers[45242] = 1.05 -- Focused Will Rank 3
+elseif isSoD then
+	HealComm.healingModifiers[439745] = 1.10 -- Tree of Life
 end
 	
 
