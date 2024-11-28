@@ -1301,6 +1301,7 @@ if( playerClass == "PALADIN" ) then
 		local DivinePlea = GetSpellInfo(54428)
 		local AvengingWrath = GetSpellInfo(31884)
 		local SacrificeRedeemed = GetSpellInfo(407805) or "Sacrifice Redeemed"
+		local DivineLight = GetSpellInfo(458856) or "Divine Light"
 
 		if isWrath then
 			spellData[HolyLight] = { coeff = 2.5 / 3.5, levels = {1, 6, 14, 22, 30, 38, 46, 54, 60, 62, 70, 75, 80}, averages = {
@@ -1350,6 +1351,10 @@ if( playerClass == "PALADIN" ) then
 				{avg(448, 502), avg(450, 505), avg(453, 508), avg(455, 510), avg(458, 513)} }}
 		end
 
+		if isSoD then
+			spellData[DivineLight] = {coeff = 2.5 / 3.5, levels = {nil}, averages = generateSODAverages(38.258376, avg(3.55, 3.93), 0.904195, 0.161311)}
+		end
+
 		talentData[HealingLight] = { mod = 0.04, current = 0 }
 		talentData[Divinity] = { mod = 0.01, current = 0 }
 		talentData[TouchedbytheLight] = {mod = 0.10, current = 0}
@@ -1368,14 +1373,17 @@ if( playerClass == "PALADIN" ) then
 		local blessings = {
 			[19977] = {
 				[HolyLight] = 210,
+				[DivineLight] = 210,
 				[FlashofLight] = 60,
 			},
 			[19978] = {
 				[HolyLight] = 300,
+				[DivineLight] = 300,
 				[FlashofLight] = 85,
 			},
 			[19979] = {
 				[HolyLight] = 400,
+				[DivineLight] = 400,
 				[FlashofLight] = 115,
 			},
 			[25890] = {
@@ -1437,6 +1445,8 @@ if( playerClass == "PALADIN" ) then
 					spellPower = spellPower + holyLibrams[playerCurrentRelic]
 				elseif( spellName == FlashofLight and flashLibrams[playerCurrentRelic] ) then
 					spellPower = spellPower + flashLibrams[playerCurrentRelic]
+				if( isSoD and spellName == DivineLight and holyLibrams[playerCurrentRelic] ) then
+					spellPower = spellPower + holyLibrams[playerCurrentRelic]
 				end
 			end
 
