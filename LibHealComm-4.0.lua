@@ -1,7 +1,7 @@
 if WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return end
 
 local major = "LibHealComm-4.0"
-local minor = 113
+local minor = 114
 assert(LibStub, format("%s requires LibStub.", major))
 
 local HealComm = LibStub:NewLibrary(major, minor)
@@ -92,7 +92,7 @@ local isClassicEra = build == 1
 local isSoD = HasActiveSeason() and GetActiveSeason() == (Enum.SeasonID.SeasonOfDiscovery or Enum.SeasonID.Placeholder) and isClassicEra
 
 local spellRankTableData = {
-	[1] = { 774, 8936, 5185, 740, 635, 19750, 139, 2060, 596, 2061, 2054, 2050, 1064, 331, 8004, 136, 755, 689, 746, 33763, 32546, 37563, 48438, 61295, 51945, 50464, 47757, 408120, 408124, 402277, 415236, 415240, 412510, 401417, 417057, 425268, 436937, 408247 },
+	[1] = { 774, 8936, 5185, 740, 635, 19750, 139, 2060, 596, 2061, 2054, 2050, 1064, 331, 8004, 136, 755, 689, 746, 33763, 32546, 37563, 48438, 61295, 51945, 50464, 47757, 408120, 408124, 402277, 415236, 415240, 412510, 401417, 417057, 425268, 436937, 408247, 458856 },
 	[2] = { 1058, 8938, 5186, 8918, 639, 19939, 6074, 10963, 996, 9472, 2055, 2052, 10622, 332, 8008, 3111, 3698, 699, 1159, 53248, 61299, 51990, 48450, 52986, 48119, 417058, 425269, 436938 },
 	[3] = { 1430, 8939, 5187, 9862, 647, 19940, 6075, 10964, 10960, 9473, 6063, 2053, 10623, 547, 8010, 3661, 3699, 709, 3267, 53249, 61300, 51997, 48451, 52987, 48120, 417059, 425270, 436939 },
 	[4] = { 2090, 8940, 5188, 9863, 1026, 19941, 6076, 10965, 10961, 9474, 6064, 913, 10466, 3662, 3700, 7651, 3268, 25422, 53251, 61301, 51998, 52988, 417060, 425271, 436940 },
@@ -925,7 +925,7 @@ if( playerClass == "DRUID" ) then
 			hotData[Lifebloom] = {interval = 1, ticks = 7, coeff = 0.52, dhCoeff = 0.34335, levels = {64}, averages = {273}, bomb = {600}}
 		elseif isSoD then
 			hotData[Lifebloom] = {interval = 1, ticks = 7, coeff = 7 * 0.051, dhCoeff = 0.274, levels = {nil} ,averages = generateSODAverages(38.949830, 0.04 * 7, 0.606705, 0.167780), bomb = generateSODAverages(38.949830, 0.57, 0.606705, 0.167780)}
-			hotData[WildGrowth] = {interval = 1, ticks = 7, coeff = 7 * 0.061, levels = {nil}, averages = generateSODAverages(38.949830, 0.34 * 7 , 0.606705, 0.167780)}
+			hotData[WildGrowth] = {interval = 1, ticks = 7, coeff = 7 * 0.03, levels = {nil}, averages = generateSODAverages(38.949830, 0.17 * 7 , 0.606705, 0.167780)}
 		end
 		if isWrath then
 			spellData[HealingTouch] = { levels = {1, 8, 14, 20, 26, 32, 38, 44, 50, 56, 60, 62, 69, 74, 79}, averages = {
@@ -1307,6 +1307,7 @@ if( playerClass == "PALADIN" ) then
 		local DivinePlea = GetSpellInfo(54428)
 		local AvengingWrath = GetSpellInfo(31884)
 		local SacrificeRedeemed = GetSpellInfo(407805) or "Sacrifice Redeemed"
+		local DivineLight = GetSpellInfo(458856) or "Divine Light"
 
 		if isWrath then
 			spellData[HolyLight] = { coeff = 2.5 / 3.5, levels = {1, 6, 14, 22, 30, 38, 46, 54, 60, 62, 70, 75, 80}, averages = {
@@ -1356,6 +1357,10 @@ if( playerClass == "PALADIN" ) then
 				{avg(448, 502), avg(450, 505), avg(453, 508), avg(455, 510), avg(458, 513)} }}
 		end
 
+		if isSoD then
+			spellData[DivineLight] = {coeff = 2.5 / 3.5, levels = {nil}, averages = generateSODAverages(38.258376, avg(3.55, 3.93), 0.904195, 0.161311)}
+		end
+
 		talentData[HealingLight] = { mod = 0.04, current = 0 }
 		talentData[Divinity] = { mod = 0.01, current = 0 }
 		talentData[TouchedbytheLight] = {mod = 0.10, current = 0}
@@ -1374,14 +1379,17 @@ if( playerClass == "PALADIN" ) then
 		local blessings = {
 			[19977] = {
 				[HolyLight] = 210,
+				[DivineLight] = 210,
 				[FlashofLight] = 60,
 			},
 			[19978] = {
 				[HolyLight] = 300,
+				[DivineLight] = 300,
 				[FlashofLight] = 85,
 			},
 			[19979] = {
 				[HolyLight] = 400,
+				[DivineLight] = 400,
 				[FlashofLight] = 115,
 			},
 			[25890] = {
@@ -1443,6 +1451,8 @@ if( playerClass == "PALADIN" ) then
 					spellPower = spellPower + holyLibrams[playerCurrentRelic]
 				elseif( spellName == FlashofLight and flashLibrams[playerCurrentRelic] ) then
 					spellPower = spellPower + flashLibrams[playerCurrentRelic]
+				elseif( isSoD and spellName == DivineLight and holyLibrams[playerCurrentRelic] ) then
+					spellPower = spellPower + holyLibrams[playerCurrentRelic]
 				end
 			end
 
@@ -2035,8 +2045,8 @@ if( isSoD and playerClass == "MAGE" ) then
 		local MassRegeneration = GetSpellInfo(412510) or "Mass Regeneration"
 		local Regeneration = GetSpellInfo(401417) or "Regeneration"
 
-		spellData[MassRegeneration] = {_isChanneled = true, coeff = 0.081 * 3, interval = 1,  ticks = 3, levels = {nil}, averages = generateSODAverages(38.258376, 0.42, 0.904195, 0.161311) }
-		spellData[Regeneration] = {_isChanneled = true, coeff =  0.243 * 3 , interval = 1, ticks = 3, levels = {nil}, averages = generateSODAverages(38.258376,  0.42, 0.904195, 0.161311)}
+		spellData[MassRegeneration] = {_isChanneled = true, coeff = 1.88 * 0.081 * 3, interval = 1,  ticks = 3, levels = {nil}, averages = generateSODAverages(38.258376, 0.42, 0.904195, 0.161311) }
+		spellData[Regeneration] = {_isChanneled = true, coeff =  1.88 * 0.243 * 3 , interval = 1, ticks = 3, levels = {nil}, averages = generateSODAverages(38.258376,  0.42, 0.904195, 0.161311)}
 
 		GetHealTargets = function(bitType, guid, spellID)
 			local spellName = GetSpellInfo(spellID)
@@ -2213,6 +2223,8 @@ if isWrath then
 	HealComm.healingModifiers[45237] = 1.03 -- Focused Will Rank 1
 	HealComm.healingModifiers[45241] = 1.04 -- Focused Will Rank 2
 	HealComm.healingModifiers[45242] = 1.05 -- Focused Will Rank 3
+elseif isSoD then
+	HealComm.healingModifiers[439745] = 1.10 -- Tree of Life
 end
 	
 
