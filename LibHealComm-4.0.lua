@@ -1806,6 +1806,7 @@ if( playerClass == "SHAMAN" ) then
 		if isSoD then
 			--Multiplied generateSODAverages levelCoeff by 10 for number of ticks
 			hotData[HealingRain] = {interval = 1, ticks = 10, coeff = 10 * 0.063, levels = {nil}, averages = generateSODAverages(29.888200, 10*0.15, 0.690312, 0.136267)}
+			hotData[Riptide] = {interval = 3, ticks = 5, coeff = 0.50, levels = {nil}, averages = generateSODAverages(29.888200, avg(0.56, 0.62), 0.690312, 0.136267)}
 		end
 
 		spellData[ChainHeal] = {coeff = 2.5 / 3.5, levels = {40, 46, 54, 61, 68, 74, 80}, averages = {
